@@ -47,5 +47,11 @@
 		<true/>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>PharmaGo utilise votre position pour afficher les pharmacies proches.</string>
+		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+		<string>PharmaGo utilise votre position pour les fonctionnalités de guidage et notifications (optionnel).</string>
+		<key>NSLocationAlwaysUsageDescription</key>
+		<string>PharmaGo utilise votre position pour vous guider vers la pharmacie sélectionnée.</string>
 	</dict>
 </plist>

@@ -17,7 +17,24 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/pharmacy/:id',
       builder: (_, state) {
-        return PharmacyDetailPage(pharmacyId: state.pathParameters['id']!);
+        return PharmacyDetailPage(
+          pharmacyId: state.pathParameters['id']!,
+          name: state.uri.queryParameters['name'] ?? 'Pharmacie',
+          address:
+              state.uri.queryParameters['address'] ?? 'Adresse non disponible',
+          isOpen: state.uri.queryParameters['isOpen'] == 'true',
+          distanceKm:
+              double.tryParse(state.uri.queryParameters['distance'] ?? '0') ??
+              0.0,
+          lat:
+              double.tryParse(state.uri.queryParameters['lat'] ?? '5.345317') ??
+              5.345317,
+          lng:
+              double.tryParse(
+                state.uri.queryParameters['lng'] ?? '-4.024429',
+              ) ??
+              -4.024429,
+        );
       },
     ),
 
