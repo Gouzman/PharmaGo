@@ -722,8 +722,8 @@ class _OnboardingPageState extends State<OnboardingPage> {
         ),
         borderRadius: BorderRadius.circular(12),
         color: isSelected
-            ? const Color(0xFF1A5276).withOpacity(0.1)
-            : Colors.white.withOpacity(0.05),
+            ? const Color(0xFF1A5276).withValues(alpha: 0.1)
+            : Colors.white.withValues(alpha: 0.05),
       ),
       child: RadioListTile<String>(
         value: value,

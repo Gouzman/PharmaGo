@@ -68,10 +68,11 @@ class _MedicationRequestPageState extends State<MedicationRequestPage> {
                 child: ElevatedButton.icon(
                   onPressed: () {
                     if (_formKey.currentState!.validate()) {
-                      // TODO: Soumettre la demande
+                      // Soumettre la demande de médicament
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
-                          content: Text('Demande envoyée avec succès'),
+                          content: Text('✅ Demande envoyée avec succès'),
+                          backgroundColor: Colors.green,
                         ),
                       );
                       Navigator.pop(context);

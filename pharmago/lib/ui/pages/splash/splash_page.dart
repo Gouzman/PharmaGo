@@ -23,6 +23,8 @@ class _SplashPageState extends State<SplashPage> {
 
     final done = await LocalStorage.hasUserData();
 
+    if (!mounted) return;
+
     if (done) {
       context.go('/home');
     } else {

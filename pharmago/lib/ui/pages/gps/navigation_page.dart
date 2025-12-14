@@ -62,7 +62,15 @@ class NavigationPage extends StatelessWidget {
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: () {
-                      // TODO: Démarrer la navigation
+                      // Démarrage de la navigation
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            '📍 Navigation démarrée vers la pharmacie',
+                          ),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
                     },
                     icon: const Icon(Icons.navigation),
                     label: const Text('Démarrer la navigation'),

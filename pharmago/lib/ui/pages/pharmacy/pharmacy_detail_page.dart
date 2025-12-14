@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../utils/location_service.dart' as loc_service;
+import '../../../utils/polyline_service.dart';
+import '../navigation/yango_navigation_page.dart';
 
 class PharmacyDetailPage extends StatefulWidget {
   final String pharmacyId;
@@ -38,6 +40,11 @@ class _PharmacyDetailPageState extends State<PharmacyDetailPage> {
   BitmapDescriptor? _pharmacyIcon;
   BitmapDescriptor? _userIcon;
   String? _darkMapStyle;
+
+  // Nouvelles variables pour polyline
+  List<LatLng> routePoints = [];
+  Set<Polyline> polylines = {};
+  bool loadingPolyline = true;
 
   @override
   void initState() {
@@ -126,9 +133,12 @@ class _PharmacyDetailPageState extends State<PharmacyDetailPage> {
       if (mounted) {
         setState(() => _userPosition = pos);
 
+        // Charger la route polyline
+        await _loadRoute();
+
         // Mettre à jour la caméra pour montrer les deux markers
         Future.delayed(const Duration(milliseconds: 500), () {
-          _updateCameraToShowBothMarkers();
+          _fitCameraToPolyline();
         });
 
         // Stream pour suivi en temps réel
@@ -179,7 +189,7 @@ class _PharmacyDetailPageState extends State<PharmacyDetailPage> {
         title: Text(
           title,
           style: const TextStyle(
-            color: Colors.white,
+            color: Color.fromARGB(255, 255, 255, 255),
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -223,6 +233,45 @@ class _PharmacyDetailPageState extends State<PharmacyDetailPage> {
     );
   }
 
+  Future<void> _loadRoute() async {
+    if (_userPosition == null) return;
+
+    try {
+      debugPrint('🛣️ Chargement de la route...');
+      const apiKey = "AIzaSyCYI5_sNO22IdUx37pupt4p67JyiP_56hg";
+      final service = PolylineService(apiKey);
+
+      final user = LatLng(_userPosition!.latitude, _userPosition!.longitude);
+      final dest = LatLng(widget.lat, widget.lng);
+
+      routePoints = await service.getRoutePolyline(
+        origin: user,
+        destination: dest,
+      );
+      debugPrint('✅ Route chargée: ${routePoints.length} points');
+
+      polylines = {
+        Polyline(
+          polylineId: const PolylineId("route"),
+          points: routePoints,
+          width: 6,
+          color: const Color(0xFF4DB6AC),
+          endCap: Cap.roundCap,
+          startCap: Cap.roundCap,
+        ),
+      };
+
+      if (mounted) {
+        setState(() => loadingPolyline = false);
+      }
+    } catch (e) {
+      debugPrint('❌ Erreur chargement route: $e');
+      if (mounted) {
+        setState(() => loadingPolyline = false);
+      }
+    }
+  }
+
   void _updateCameraToShowBothMarkers() {
     if (_mapController == null || _userPosition == null) return;
 
@@ -248,6 +297,35 @@ class _PharmacyDetailPageState extends State<PharmacyDetailPage> {
     _mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
   }
 
+  Future<void> _fitCameraToPolyline() async {
+    if (routePoints.isEmpty || _mapController == null) {
+      // Fallback sur la méthode classique
+      _updateCameraToShowBothMarkers();
+      return;
+    }
+
+    final bounds = _createBounds(routePoints);
+    await _mapController!.animateCamera(
+      CameraUpdate.newLatLngBounds(bounds, 60),
+    );
+  }
+
+  LatLngBounds _createBounds(List<LatLng> points) {
+    double x0 = points.first.latitude;
+    double x1 = points.first.latitude;
+    double y0 = points.first.longitude;
+    double y1 = points.first.longitude;
+
+    for (LatLng p in points) {
+      if (p.latitude > x1) x1 = p.latitude;
+      if (p.latitude < x0) x0 = p.latitude;
+      if (p.longitude > y1) y1 = p.longitude;
+      if (p.longitude < y0) y0 = p.longitude;
+    }
+
+    return LatLngBounds(southwest: LatLng(x0, y0), northeast: LatLng(x1, y1));
+  }
+
   @override
   void dispose() {
     _posSub?.cancel();
@@ -260,316 +338,257 @@ class _PharmacyDetailPageState extends State<PharmacyDetailPage> {
     return Scaffold(
       backgroundColor: const Color(0xFF121212),
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            // HEADER avec bouton retour
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              child: Row(
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E1E1E),
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.arrow_back_ios_new,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Text(
-                    "Détails de la pharmacie",
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                ],
+            // GOOGLE MAP en plein écran
+            GoogleMap(
+              initialCameraPosition: CameraPosition(
+                target: LatLng(widget.lat, widget.lng),
+                zoom: 13.0,
               ),
+              mapType: MapType.normal,
+              style: _darkMapStyle,
+              polylines: polylines,
+              onMapCreated: (controller) {
+                debugPrint('🗺️ GoogleMap créée');
+                _mapController = controller;
+
+                // Appliquer le style dark après création
+                if (_darkMapStyle != null) {
+                  controller.setMapStyle(_darkMapStyle);
+                }
+
+                // Ajuster la caméra après un délai
+                Future.delayed(const Duration(milliseconds: 1000), () {
+                  if (mounted) {
+                    if (routePoints.isNotEmpty) {
+                      _fitCameraToPolyline();
+                    } else if (_userPosition != null) {
+                      _updateCameraToShowBothMarkers();
+                    }
+                  }
+                });
+              },
+              markers: {
+                Marker(
+                  markerId: const MarkerId("pharmacy"),
+                  position: LatLng(widget.lat, widget.lng),
+                  icon: BitmapDescriptor.defaultMarkerWithHue(
+                    BitmapDescriptor.hueRed,
+                  ),
+                  infoWindow: InfoWindow(
+                    title: widget.name,
+                    snippet: widget.address,
+                  ),
+                ),
+                if (_userPosition != null)
+                  Marker(
+                    markerId: const MarkerId("user"),
+                    position: LatLng(
+                      _userPosition!.latitude,
+                      _userPosition!.longitude,
+                    ),
+                    icon: BitmapDescriptor.defaultMarkerWithHue(
+                      BitmapDescriptor.hueBlue,
+                    ),
+                    infoWindow: const InfoWindow(title: "Votre position"),
+                  ),
+              },
+              myLocationEnabled: false,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: true,
+              compassEnabled: false,
+              mapToolbarEnabled: false,
+              rotateGesturesEnabled: true,
+              scrollGesturesEnabled: true,
+              tiltGesturesEnabled: false,
+              zoomGesturesEnabled: true,
+              buildingsEnabled: true,
+              trafficEnabled: false,
+              padding: const EdgeInsets.only(top: 280, bottom: 100),
             ),
 
-            const SizedBox(height: 12),
-
-            // CARD INFO avec design dark premium
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
+            // CARD INFO flottante en haut
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
               child: Container(
-                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [const Color(0xFF1E1E1E), const Color(0xFF252525)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(20),
+                  color: const Color(0xFF1E1E1E),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.4),
-                      blurRadius: 16,
-                      offset: const Offset(0, 4),
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 10,
+                      offset: const Offset(0, 2),
                     ),
                   ],
                 ),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      widget.name,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        // Badge STATUS
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: widget.isOpen
-                                ? Colors.green.withValues(alpha: 0.2)
-                                : Colors.red.withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: widget.isOpen
-                                  ? Colors.green.withValues(alpha: 0.5)
-                                  : Colors.red.withValues(alpha: 0.5),
-                              width: 1,
-                            ),
-                          ),
-                          child: Text(
-                            widget.isOpen ? "Ouvert" : "Fermé",
-                            style: TextStyle(
-                              color: widget.isOpen
-                                  ? Colors.greenAccent
-                                  : Colors.redAccent,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        // Badge DISTANCE
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(
-                              0xFF4DB6AC,
-                            ).withValues(alpha: 0.2),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: const Color(
-                                0xFF4DB6AC,
-                              ).withValues(alpha: 0.5),
-                              width: 1,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.location_on,
-                                size: 16,
-                                color: Color(0xFF4DB6AC),
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                "${widget.distanceKm.toStringAsFixed(1)} km",
-                                style: const TextStyle(
-                                  color: Color(0xFF4DB6AC),
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    // Adresse
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.location_on_outlined,
-                          color: Colors.white54,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            widget.address,
-                            style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 14,
-                              height: 1.4,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    // Téléphone
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.phone_outlined,
-                          color: Colors.white54,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          "42572779",
-                          style: TextStyle(
-                            color: Color(0xFF26A69A),
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // GOOGLE MAP avec style dark
-            Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(28),
-                ),
-                child: GoogleMap(
-                  initialCameraPosition: CameraPosition(
-                    target: LatLng(widget.lat, widget.lng),
-                    zoom: 15.5,
-                  ),
-                  onMapCreated: (controller) {
-                    _mapController = controller;
-                    if (_darkMapStyle != null) {
-                      controller.setMapStyle(_darkMapStyle);
-                    }
-                  },
-                  markers: {
-                    if (_pharmacyIcon != null)
-                      Marker(
-                        markerId: const MarkerId("pharmacy"),
-                        position: LatLng(widget.lat, widget.lng),
-                        icon: _pharmacyIcon!,
-                        infoWindow: InfoWindow(
-                          title: widget.name,
-                          snippet: widget.address,
-                        ),
-                      ),
-                    if (_userPosition != null && _userIcon != null)
-                      Marker(
-                        markerId: const MarkerId("user"),
-                        position: LatLng(
-                          _userPosition!.latitude,
-                          _userPosition!.longitude,
-                        ),
-                        icon: _userIcon!,
-                        infoWindow: const InfoWindow(title: "Votre position"),
-                      ),
-                  },
-                  myLocationEnabled: true,
-                  myLocationButtonEnabled: false,
-                  zoomControlsEnabled: false,
-                  compassEnabled: true,
-                  mapToolbarEnabled: false,
-                  minMaxZoomPreference: const MinMaxZoomPreference(12, 20),
-                ),
-              ),
-            ),
-
-            // BOUTON NAVIGATION avec gradient premium
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [const Color(0xFF121212), const Color(0xFF1A1A1A)],
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                ),
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF4DB6AC), Color(0xFF26A69A)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF4DB6AC).withValues(alpha: 0.5),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(18),
-                    onTap: () {
-                      // TODO: Implémenter navigation
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text('Navigation à implémenter'),
-                          behavior: SnackBarBehavior.floating,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                      );
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 18),
+                    // Header avec bouton retour
+                    Padding(
+                      padding: const EdgeInsets.all(8),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const Icon(
-                            Icons.navigation,
-                            color: Colors.white,
-                            size: 24,
+                          Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF1E1E1E),
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.3),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: IconButton(
+                              icon: const Icon(
+                                Icons.arrow_back_ios_new,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                              onPressed: () => Navigator.pop(context),
+                            ),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 5),
                           const Text(
-                            "Démarrer la navigation",
+                            "Détails de la pharmacie",
                             style: TextStyle(
                               fontSize: 18,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: FontWeight.w700,
                               color: Colors.white,
-                              letterSpacing: 0.5,
+                              letterSpacing: 0.3,
+                              shadows: [
+                                Shadow(color: Colors.black54, blurRadius: 8),
+                              ],
                             ),
                           ),
                         ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 8),
+
+                    // Card de détails
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      child: _buildPharmacyCard(),
+                    ),
+
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            ),
+
+            // BOUTON NAVIGATION flottant en bas
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E1E1E),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 10,
+                      offset: const Offset(0, -2),
+                    ),
+                  ],
+                ),
+                padding: const EdgeInsets.all(20),
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF4DB6AC), Color(0xFF26A69A)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF4DB6AC).withValues(alpha: 0.5),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () {
+                        // Utiliser position réelle ou position par défaut (simulateur)
+                        final LatLng userStart;
+
+                        if (_userPosition != null) {
+                          userStart = LatLng(
+                            _userPosition!.latitude,
+                            _userPosition!.longitude,
+                          );
+                        } else {
+                          // Position par défaut proche de la pharmacie (pour simulateur)
+                          debugPrint(
+                            '⚠️ Pas de position GPS, utilisation position par défaut',
+                          );
+                          userStart = LatLng(
+                            widget.lat + 0.01, // ~1km au nord
+                            widget.lng + 0.01,
+                          );
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text(
+                                'Position GPS non disponible. Utilisation position simulée.',
+                              ),
+                              backgroundColor: Colors.orange.shade700,
+                              behavior: SnackBarBehavior.floating,
+                              duration: const Duration(seconds: 2),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          );
+                        }
+
+                        // Navigation vers YangoNavigationPage
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => YangoNavigationPage(
+                              userStart: userStart,
+                              destination: LatLng(widget.lat, widget.lng),
+                              destinationName: widget.name,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 18),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.navigation,
+                              color: Colors.white,
+                              size: 24,
+                            ),
+                            const SizedBox(width: 12),
+                            const Text(
+                              "Démarrer la navigation",
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -578,6 +597,147 @@ class _PharmacyDetailPageState extends State<PharmacyDetailPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildPharmacyCard() {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1E1E1E), Color(0xFF252525)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.name,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              // Badge STATUS
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: widget.isOpen
+                      ? Colors.green.withValues(alpha: 0.2)
+                      : Colors.red.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: widget.isOpen
+                        ? Colors.green.withValues(alpha: 0.5)
+                        : Colors.red.withValues(alpha: 0.5),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  widget.isOpen ? "Ouvert" : "Fermé",
+                  style: TextStyle(
+                    color: widget.isOpen
+                        ? Colors.greenAccent
+                        : Colors.redAccent,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Badge DISTANCE
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4DB6AC).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: const Color(0xFF4DB6AC).withValues(alpha: 0.5),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on,
+                      size: 16,
+                      color: Color(0xFF4DB6AC),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      "${widget.distanceKm.toStringAsFixed(1)} km",
+                      style: const TextStyle(
+                        color: Color(0xFF4DB6AC),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Adresse
+          Row(
+            children: [
+              const Icon(
+                Icons.location_on_outlined,
+                color: Colors.white54,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  widget.address,
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Téléphone
+          Row(
+            children: [
+              const Icon(Icons.phone_outlined, color: Colors.white54, size: 20),
+              const SizedBox(width: 8),
+              const Text(
+                "42572779",
+                style: TextStyle(
+                  color: Color(0xFF26A69A),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

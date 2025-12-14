@@ -144,7 +144,7 @@ class _WalkingPersonRoadProgressBarState
               'Appuyez pour redémarrer',
               style: TextStyle(
                 fontSize: 11,
-                color: const Color(0xFF1A5276).withOpacity(0.6),
+                color: const Color(0xFF1A5276).withValues(alpha: 0.6),
                 fontStyle: FontStyle.italic,
               ),
             ),
@@ -253,7 +253,7 @@ class WalkingPersonRoadPainter extends CustomPainter {
   void _drawPin(Canvas canvas, Offset position, Color color) {
     final pinPaint = Paint()..color = color;
     final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.3)
+      ..color = Colors.black.withValues(alpha: 0.3)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
 
     canvas.drawCircle(position + const Offset(0, 2), 8, shadowPaint);
@@ -369,7 +369,7 @@ class WalkingPersonRoadPainter extends CustomPainter {
 
       // Draw shadow at road level (below the person)
       final shadowPaint = Paint()
-        ..color = Colors.black.withOpacity(0.3)
+        ..color = Colors.black.withValues(alpha: 0.3)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
       canvas.drawCircle(
         Offset(0, imageSize / 2 + 5), // Shadow at feet level

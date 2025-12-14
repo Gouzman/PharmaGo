@@ -1,8 +1,42 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+import '../../../providers/pharmacy_provider.dart';
+import '../../../utils/location_service.dart';
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
+
+  @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  @override
+  void initState() {
+    super.initState();
+    _initializeData();
+  }
+
+  Future<void> _initializeData() async {
+    final pharmacyProvider = context.read<PharmacyProvider>();
+
+    // Charger la position de l'utilisateur
+    try {
+      final locationService = LocationService();
+      final position = await locationService.getCurrentPosition();
+      if (mounted) {
+        pharmacyProvider.updateUserPosition(position);
+      }
+    } catch (e) {
+      debugPrint('⚠️ Impossible de récupérer la position: $e');
+    }
+
+    // Charger les pharmacies
+    if (mounted) {
+      await pharmacyProvider.loadPharmacies();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,8 +100,56 @@ class HomePage extends StatelessWidget {
                             shape: BoxShape.circle,
                           ),
                           child: IconButton(
-                            icon: const Icon(Icons.notifications_outlined),
-                            onPressed: () {},
+                            icon: const Icon(Icons.map_outlined),
+                            color: const Color(0xFF4DB6AC),
+                            onPressed: () => context.push('/test-map'),
+                            tooltip: 'Test Carte',
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.9),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Consumer<PharmacyProvider>(
+                            builder: (context, provider, _) {
+                              return Stack(
+                                children: [
+                                  IconButton(
+                                    icon: provider.isSyncing
+                                        ? const SizedBox(
+                                            width: 20,
+                                            height: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(Icons.refresh),
+                                    onPressed: provider.isSyncing
+                                        ? null
+                                        : () async {
+                                            await provider.syncPharmacies();
+                                            if (mounted) {
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    '✅ Pharmacies mises à jour',
+                                                  ),
+                                                  duration: Duration(
+                                                    seconds: 2,
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                    tooltip: 'Actualiser',
+                                  ),
+                                ],
+                              );
+                            },
                           ),
                         ),
                       ],
@@ -75,135 +157,160 @@ class HomePage extends StatelessWidget {
                     const SizedBox(height: 24),
                     _AdCarousel(),
                     const SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                    Consumer<PharmacyProvider>(
+                      builder: (context, provider, _) {
+                        final nearbyCount = provider.nearbyPharmacies.length;
+                        return Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              "Pharmacie à proximité",
-                              style: TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 18,
-                              ),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  "Pharmacie à proximité",
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 18,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  "$nearbyCount pharmacies · 0 - 5km",
+                                  style: const TextStyle(
+                                    color: Colors.black54,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
                             ),
-                            SizedBox(height: 4),
-                            Text(
-                              "0 - 5km",
+                            const Text(
+                              "Voir tout",
                               style: TextStyle(
-                                color: Colors.black54,
-                                fontSize: 13,
+                                color: Color.fromARGB(255, 255, 255, 255),
+                                fontSize: 14,
                               ),
                             ),
                           ],
-                        ),
-                        Text(
-                          "Voir tout",
-                          style: TextStyle(
-                            color: Color.fromARGB(255, 255, 255, 255),
-                            fontSize: 14,
-                          ),
-                        ),
-                      ],
+                        );
+                      },
                     ),
                     const SizedBox(height: 16),
                   ],
                 ),
               ),
-              // Section scrollable
+              // Section scrollable avec les pharmacies
               Expanded(
                 child: Container(
                   color: Colors.transparent,
-                  child: SingleChildScrollView(
-                    physics: const BouncingScrollPhysics(),
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _PharmacyCard(
-                          name: "Pharmacie St Gabriel",
-                          subtitle: "92Q5+528, Bd des Martyrs · 07 09 02 7356",
-                          address: "Bd des Martyrs",
-                          status: "Ouvert",
-                          closingTime: "Ferme à 20:00",
-                          distance: "0.8 km",
-                          isOpen: true,
-                          onTap: () {},
-                          onDetailsPressed: () {
-                            context.push(
-                              '/pharmacy/1?name=Pharmacie St Gabriel&address=92Q5+528, Bd des Martyrs&isOpen=true&distance=0.8&lat=5.345317&lng=-4.024429',
-                            );
-                          },
+                  child: Consumer<PharmacyProvider>(
+                    builder: (context, provider, _) {
+                      // Afficher le loader pendant le chargement initial
+                      if (provider.isLoading && provider.pharmacies.isEmpty) {
+                        return const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              CircularProgressIndicator(
+                                color: Color(0xFF4DB6AC),
+                              ),
+                              SizedBox(height: 16),
+                              Text(
+                                'Chargement des pharmacies...',
+                                style: TextStyle(
+                                  color: Colors.black54,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      // Afficher un message si aucune pharmacie
+                      if (provider.pharmacies.isEmpty) {
+                        return Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.local_pharmacy_outlined,
+                                size: 64,
+                                color: Colors.black26,
+                              ),
+                              const SizedBox(height: 16),
+                              const Text(
+                                'Aucune pharmacie disponible',
+                                style: TextStyle(
+                                  color: Colors.black54,
+                                  fontSize: 16,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              ElevatedButton.icon(
+                                onPressed: () => provider.syncPharmacies(),
+                                icon: const Icon(Icons.refresh),
+                                label: const Text('Réessayer'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF4DB6AC),
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+
+                      // Afficher les pharmacies à proximité
+                      final nearbyPharmacies = provider.nearbyPharmacies;
+                      final userPosition = provider.userPosition;
+
+                      return SingleChildScrollView(
+                        physics: const BouncingScrollPhysics(),
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            ...nearbyPharmacies.map((pharmacy) {
+                              final distance = userPosition != null
+                                  ? pharmacy.distanceFrom(
+                                      userPosition.latitude,
+                                      userPosition.longitude,
+                                    )
+                                  : 0.0;
+
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: _PharmacyCard(
+                                  name: pharmacy.name,
+                                  subtitle: pharmacy.quartier.isNotEmpty
+                                      ? pharmacy.quartier
+                                      : pharmacy.commune,
+                                  address:
+                                      '${pharmacy.address} · ${pharmacy.phone}',
+                                  status: pharmacy.status,
+                                  closingTime: pharmacy.closingTimeText,
+                                  distance: '${distance.toStringAsFixed(1)} km',
+                                  isOpen: pharmacy.isOpenNow,
+                                  isGuard: pharmacy.isGuard,
+                                  onTap: () {},
+                                  onDetailsPressed: () {
+                                    context.push(
+                                      '/pharmacy/${pharmacy.id}?name=${Uri.encodeComponent(pharmacy.name)}&address=${Uri.encodeComponent(pharmacy.address)}&isOpen=${pharmacy.isOpenNow}&distance=${distance.toStringAsFixed(1)}&lat=${pharmacy.lat}&lng=${pharmacy.lng}',
+                                    );
+                                  },
+                                  onNavigationPressed: () {
+                                    context.push(
+                                      '/navigation?pharmacyName=${Uri.encodeComponent(pharmacy.name)}&pharmacyLat=${pharmacy.lat}&pharmacyLng=${pharmacy.lng}',
+                                    );
+                                  },
+                                ),
+                              );
+                            }),
+                            const SizedBox(height: 80),
+                          ],
                         ),
-                        const SizedBox(height: 12),
-                        _PharmacyCard(
-                          name: "Pharmacie de la Riviera",
-                          subtitle: "Riviera Palmeraie",
-                          address: "Avenue 18, Riviera · 27 21 23 45 67",
-                          status: "Ouvert",
-                          closingTime: "Ferme à 22:00",
-                          distance: "1.5 km",
-                          isOpen: true,
-                          onTap: () {},
-                          onDetailsPressed: () {
-                            context.push(
-                              '/pharmacy/2?name=Pharmacie de la Riviera&address=Avenue 18, Riviera&isOpen=true&distance=1.5&lat=5.355317&lng=-4.014429',
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        _PharmacyCard(
-                          name: "Pharmacie Principale d'Aboboté",
-                          subtitle: "Pharmacie Principale d'Aboboté",
-                          address:
-                              "CX89+H6V Pharmacie, Autoroute d'Abobo · 42527779",
-                          status: "Ouvert",
-                          closingTime: "Ferme à 20:00",
-                          distance: "2.3 km",
-                          isOpen: true,
-                          onTap: () {},
-                          onDetailsPressed: () {
-                            context.push(
-                              '/pharmacy/3?name=Pharmacie Principale d\'Aboboté&address=CX89+H6V Pharmacie, Autoroute d\'Abobo&isOpen=true&distance=2.3&lat=5.365317&lng=-4.034429',
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        _PharmacyCard(
-                          name: "Pharmacie du Plateau",
-                          subtitle: "Plateau Centre",
-                          address: "Rue du Commerce · 27 20 21 22 23",
-                          status: "Ouvert",
-                          closingTime: "Ferme à 21:00",
-                          distance: "3.7 km",
-                          isOpen: true,
-                          onTap: () {},
-                          onDetailsPressed: () {
-                            context.push(
-                              '/pharmacy/4?name=Pharmacie du Plateau&address=Rue du Commerce, Plateau&isOpen=true&distance=3.7&lat=5.335317&lng=-4.004429',
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        _PharmacyCard(
-                          name: "Pharmacie Yopougon",
-                          subtitle: "Yopougon Sideci",
-                          address: "Rue Princesse, Yopougon · 05 06 07 08 09",
-                          status: "Ouvert",
-                          closingTime: "Ferme à 19:00",
-                          distance: "4.8 km",
-                          isOpen: true,
-                          onTap: () {},
-                          onDetailsPressed: () {
-                            context.push(
-                              '/pharmacy/5?name=Pharmacie Yopougon&address=Rue Princesse, Yopougon&isOpen=true&distance=4.8&lat=5.325317&lng=-4.044429',
-                            );
-                          },
-                        ),
-                        const SizedBox(height: 80),
-                      ],
-                    ),
+                      );
+                    },
                   ),
                 ),
               ),
@@ -397,8 +504,10 @@ class _PharmacyCard extends StatelessWidget {
   final String closingTime;
   final String distance;
   final bool isOpen;
+  final bool isGuard;
   final VoidCallback onTap;
   final VoidCallback onDetailsPressed;
+  final VoidCallback onNavigationPressed;
 
   const _PharmacyCard({
     required this.name,
@@ -408,8 +517,10 @@ class _PharmacyCard extends StatelessWidget {
     required this.closingTime,
     required this.distance,
     required this.isOpen,
+    this.isGuard = false,
     required this.onTap,
     required this.onDetailsPressed,
+    required this.onNavigationPressed,
   });
 
   @override
@@ -422,6 +533,9 @@ class _PharmacyCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
+          border: isGuard
+              ? Border.all(color: const Color(0xFFFF6F00), width: 2)
+              : null,
           boxShadow: [
             BoxShadow(
               color: Colors.black.withValues(alpha: 0.05),
@@ -436,11 +550,13 @@ class _PharmacyCard extends StatelessWidget {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: Color(0xFF2D5F4F),
+                color: isGuard
+                    ? const Color(0xFFFF6F00)
+                    : const Color(0xFF2D5F4F),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(
-                Icons.local_pharmacy,
+              child: Icon(
+                isGuard ? Icons.medical_services : Icons.local_pharmacy,
                 color: Colors.white,
                 size: 24,
               ),
@@ -462,6 +578,34 @@ class _PharmacyCard extends StatelessWidget {
                           ),
                         ),
                       ),
+                      if (isGuard)
+                        Container(
+                          margin: const EdgeInsets.only(right: 6),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF6F00),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.shield, size: 10, color: Colors.white),
+                              SizedBox(width: 3),
+                              Text(
+                                'GARDE',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -576,16 +720,20 @@ class _PharmacyCard extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF4DB6AC).withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.navigation,
-                size: 20,
-                color: Color(0xFF4DB6AC),
+            InkWell(
+              onTap: onNavigationPressed,
+              borderRadius: BorderRadius.circular(50),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF4DB6AC).withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.navigation,
+                  size: 20,
+                  color: Color(0xFF4DB6AC),
+                ),
               ),
             ),
           ],

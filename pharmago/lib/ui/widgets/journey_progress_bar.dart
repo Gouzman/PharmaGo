@@ -118,7 +118,7 @@ class _JourneyProgressBarState extends State<JourneyProgressBar>
               'Appuyez pour redémarrer',
               style: TextStyle(
                 fontSize: 11,
-                color: const Color(0xFF1A5276).withOpacity(0.6),
+                color: const Color(0xFF1A5276).withValues(alpha: 0.6),
                 fontStyle: FontStyle.italic,
               ),
             ),
@@ -229,7 +229,7 @@ class CurvedRoadPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.3)
+      ..color = Colors.black.withValues(alpha: 0.3)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
 
     // Pin shadow
@@ -355,7 +355,7 @@ class CurvedRoadPainter extends CustomPainter {
       ..style = PaintingStyle.fill;
 
     final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.3)
+      ..color = Colors.black.withValues(alpha: 0.3)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
 
     // Shadow (adjusted for bobbing)
@@ -364,21 +364,13 @@ class CurvedRoadPainter extends CustomPainter {
     // Background
     canvas.drawCircle(adjustedPosition, 14, bgPaint);
 
-    // TODO: Replace with PNG image drawing
-    // Example code for drawing PNG (uncomment and adapt when you add the image):
-    /*
-    final image = await _loadImage('assets/images/walking_person.png');
-    paintImage(
-      canvas: canvas,
-      rect: Rect.fromCenter(
-        center: adjustedPosition,
-        width: 60,
-        height: 60,
-      ),
-      image: image,
-      fit: BoxFit.contain,
-    );
-    */
+    // Note: Pour utiliser une image PNG, ajoutez l'image dans assets/images/
+    // et utilisez la méthode paintImage() pour la dessiner
+    // Exemple:
+    // final image = await rootBundle.load('assets/images/walking_person.png');
+    // final codec = await instantiateImageCodec(image.buffer.asUint8List());
+    // final frame = await codec.getNextFrame();
+    // paintImage(canvas: canvas, rect: Rect.fromCenter(...), image: frame.image);
 
     // Fallback: Simple walking person (stick figure with animated legs)
     // Head
