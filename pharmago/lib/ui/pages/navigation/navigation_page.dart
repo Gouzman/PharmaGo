@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
-import '../../../utils/polyline_service.dart';
+import '../../../services/osrm_service.dart';
 
-/// NavigationPage - Navigation en temps réel style Yango/Uber
+/// NavigationPage - Navigation en temps réel style Yango/Uber avec OSM
 /// Affiche la position utilisateur, polyline, distance, ETA
 class NavigationPage extends StatefulWidget {
   final LatLng userStart;
@@ -24,30 +24,21 @@ class NavigationPage extends StatefulWidget {
 }
 
 class _NavigationPageState extends State<NavigationPage> {
-  GoogleMapController? _mapController;
+  final MapController _mapController = MapController();
   StreamSubscription<Position>? _positionSubscription;
 
   // État
   Position? _currentUserPosition;
   List<LatLng> _routePoints = [];
-  Set<Polyline> _polylines = {};
-  Set<Marker> _markers = {};
-  String? _darkMapStyle;
 
   // Données navigation
   double _distanceKm = 0.0;
   int _etaMinutes = 0;
   bool _isLoadingRoute = true;
 
-  // Icônes custom
-  BitmapDescriptor? _userIcon;
-  BitmapDescriptor? _pharmacyIcon;
-
   @override
   void initState() {
     super.initState();
-    _loadMapStyle();
-    _loadCustomIcons();
     _startLocationTracking();
     _loadInitialRoute();
   }
@@ -55,44 +46,7 @@ class _NavigationPageState extends State<NavigationPage> {
   @override
   void dispose() {
     _positionSubscription?.cancel();
-    _mapController?.dispose();
     super.dispose();
-  }
-
-  /// Charger le style dark de la carte
-  Future<void> _loadMapStyle() async {
-    try {
-      _darkMapStyle = await rootBundle.loadString(
-        'assets/map_styles/dark.json',
-      );
-    } catch (e) {
-      debugPrint('⚠️ Erreur chargement style map: $e');
-    }
-  }
-
-  /// Charger les icônes custom pour markers
-  Future<void> _loadCustomIcons() async {
-    try {
-      _pharmacyIcon = await BitmapDescriptor.asset(
-        const ImageConfiguration(size: Size(64, 64)),
-        'assets/icons/pharmacy_pin.png',
-      );
-    } catch (e) {
-      _pharmacyIcon = BitmapDescriptor.defaultMarkerWithHue(
-        BitmapDescriptor.hueGreen,
-      );
-    }
-
-    try {
-      _userIcon = await BitmapDescriptor.asset(
-        const ImageConfiguration(size: Size(48, 48)),
-        'assets/icons/user_pin.png',
-      );
-    } catch (e) {
-      _userIcon = BitmapDescriptor.defaultMarkerWithHue(
-        BitmapDescriptor.hueBlue,
-      );
-    }
   }
 
   /// Démarrer le suivi GPS temps réel
@@ -124,7 +78,6 @@ class _NavigationPageState extends State<NavigationPage> {
         setState(() {
           _currentUserPosition = initialPosition;
         });
-        _updateMarkers();
         _calculateDistanceAndETA();
       }
 
@@ -140,7 +93,6 @@ class _NavigationPageState extends State<NavigationPage> {
               setState(() {
                 _currentUserPosition = position;
               });
-              _updateMarkers();
               _calculateDistanceAndETA();
               _updateCameraPosition();
             }
@@ -151,39 +103,25 @@ class _NavigationPageState extends State<NavigationPage> {
     }
   }
 
-  /// Charger l'itinéraire initial
+  /// Charger l'itinéraire initial avec OSRM
   Future<void> _loadInitialRoute() async {
     setState(() => _isLoadingRoute = true);
 
     try {
-      const apiKey = "AIzaSyCYI5_sNO22IdUx37pupt4p67JyiP_56hg";
-      final service = PolylineService(apiKey);
-
-      final origin = widget.userStart;
-      final destination = widget.pharmacyPosition;
-
-      final points = await service.getRoutePolyline(
-        origin: origin,
-        destination: destination,
+      final osrmService = OSRMService();
+      final route = await osrmService.getRoute(
+        start: widget.userStart,
+        end: widget.pharmacyPosition,
       );
 
-      if (mounted) {
+      if (mounted && route != null) {
         setState(() {
-          _routePoints = points;
-          _polylines = {
-            Polyline(
-              polylineId: const PolylineId('route'),
-              points: _routePoints,
-              color: const Color(0xFF4DB6AC),
-              width: 7,
-              startCap: Cap.roundCap,
-              endCap: Cap.roundCap,
-            ),
-          };
+          _routePoints = route.points;
+          _distanceKm = route.distanceMeters / 1000;
+          _etaMinutes = (route.durationSeconds / 60).ceil();
           _isLoadingRoute = false;
         });
 
-        _updateMarkers();
         _fitCameraToRoute();
       }
     } catch (e) {
@@ -193,41 +131,6 @@ class _NavigationPageState extends State<NavigationPage> {
         _showError('Impossible de charger l\'itinéraire');
       }
     }
-  }
-
-  /// Mettre à jour les markers
-  void _updateMarkers() {
-    final markers = <Marker>{};
-
-    // Marker pharmacie
-    markers.add(
-      Marker(
-        markerId: const MarkerId('pharmacy'),
-        position: widget.pharmacyPosition,
-        icon: _pharmacyIcon ?? BitmapDescriptor.defaultMarker,
-        infoWindow: InfoWindow(title: widget.pharmacyName),
-      ),
-    );
-
-    // Marker utilisateur
-    if (_currentUserPosition != null) {
-      markers.add(
-        Marker(
-          markerId: const MarkerId('user'),
-          position: LatLng(
-            _currentUserPosition!.latitude,
-            _currentUserPosition!.longitude,
-          ),
-          icon:
-              _userIcon ??
-              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
-          infoWindow: const InfoWindow(title: 'Votre position'),
-          anchor: const Offset(0.5, 0.5),
-        ),
-      );
-    }
-
-    setState(() => _markers = markers);
   }
 
   /// Calculer distance et ETA avec Haversine
@@ -252,29 +155,31 @@ class _NavigationPageState extends State<NavigationPage> {
 
   /// Ajuster la caméra pour afficher toute la route
   Future<void> _fitCameraToRoute() async {
-    if (_mapController == null || _routePoints.isEmpty) return;
+    if (_routePoints.isEmpty) return;
 
     final bounds = _calculateBounds(_routePoints);
 
     await Future.delayed(const Duration(milliseconds: 300));
-    await _mapController!.animateCamera(
-      CameraUpdate.newLatLngBounds(bounds, 80),
+    _mapController.fitCamera(
+      CameraFit.bounds(
+        bounds: LatLngBounds(bounds.$1, bounds.$2),
+        padding: const EdgeInsets.all(80),
+      ),
     );
   }
 
   /// Mettre à jour la position de la caméra en suivant l'utilisateur
   void _updateCameraPosition() {
-    if (_mapController == null || _currentUserPosition == null) return;
+    if (_currentUserPosition == null) return;
 
-    _mapController!.animateCamera(
-      CameraUpdate.newLatLng(
-        LatLng(_currentUserPosition!.latitude, _currentUserPosition!.longitude),
-      ),
+    _mapController.move(
+      LatLng(_currentUserPosition!.latitude, _currentUserPosition!.longitude),
+      15.0,
     );
   }
 
   /// Calculer les bounds min/max pour la caméra
-  LatLngBounds _calculateBounds(List<LatLng> points) {
+  (LatLng, LatLng) _calculateBounds(List<LatLng> points) {
     double minLat = points.first.latitude;
     double maxLat = points.first.latitude;
     double minLng = points.first.longitude;
@@ -287,10 +192,7 @@ class _NavigationPageState extends State<NavigationPage> {
       if (point.longitude > maxLng) maxLng = point.longitude;
     }
 
-    return LatLngBounds(
-      southwest: LatLng(minLat, minLng),
-      northeast: LatLng(maxLat, maxLng),
-    );
+    return (LatLng(minLat, minLng), LatLng(maxLat, maxLng));
   }
 
   /// Afficher une erreur
@@ -313,33 +215,70 @@ class _NavigationPageState extends State<NavigationPage> {
       body: SafeArea(
         child: Stack(
           children: [
-            // GOOGLE MAP FULLSCREEN
-            GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: widget.userStart,
-                zoom: 15.0,
+            // FLUTTER MAP (OSM) FULLSCREEN
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: widget.userStart,
+                initialZoom: 15.0,
+                interactionOptions: const InteractionOptions(
+                  flags: InteractiveFlag.all,
+                ),
               ),
-              onMapCreated: (controller) async {
-                _mapController = controller;
-                if (_darkMapStyle != null) {
-                  try {
-                    await controller.setMapStyle(_darkMapStyle);
-                  } catch (e) {
-                    debugPrint('⚠️ Erreur application style: $e');
-                  }
-                }
-              },
-              polylines: _polylines,
-              markers: _markers,
-              myLocationEnabled: false,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              compassEnabled: true,
-              mapToolbarEnabled: false,
-              rotateGesturesEnabled: true,
-              scrollGesturesEnabled: true,
-              tiltGesturesEnabled: false,
-              zoomGesturesEnabled: true,
+              children: [
+                // Tuiles OSM
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.pharmago.app',
+                ),
+
+                // Polyline de la route
+                if (_routePoints.isNotEmpty)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: _routePoints,
+                        color: const Color(0xFF4DB6AC),
+                        strokeWidth: 7.0,
+                      ),
+                    ],
+                  ),
+
+                // Markers
+                MarkerLayer(
+                  markers: [
+                    // Marker pharmacie
+                    Marker(
+                      point: widget.pharmacyPosition,
+                      width: 60,
+                      height: 60,
+                      child: const Icon(
+                        Icons.local_pharmacy,
+                        color: Color(0xFF4DB6AC),
+                        size: 40,
+                      ),
+                    ),
+
+                    // Marker utilisateur
+                    if (_currentUserPosition != null)
+                      Marker(
+                        point: LatLng(
+                          _currentUserPosition!.latitude,
+                          _currentUserPosition!.longitude,
+                        ),
+                        width: 40,
+                        height: 40,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.blue,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 3),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
             ),
 
             // PANNEAU INFO EN HAUT (style Yango)

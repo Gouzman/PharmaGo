@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import '../../../providers/pharmacy_provider.dart';
-import '../../../utils/location_service.dart';
+import 'package:pharmago/models/pharmacy.dart';
+import 'package:pharmago/providers/pharmacy_provider.dart';
+import 'package:pharmago/utils/location_service.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -15,26 +17,54 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _initializeData();
+    // Attendre que le build soit terminé avant d'initialiser
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeData();
+    });
   }
 
   Future<void> _initializeData() async {
     final pharmacyProvider = context.read<PharmacyProvider>();
 
-    // Charger la position de l'utilisateur
+    debugPrint('🚀 Initialisation HomePage...');
+
+    // 🧪 MODE TEST : Position fixe à Abidjan (Plateau)
+    final testPosition = Position(
+      latitude: 5.316667, // Plateau, Abidjan
+      longitude: -4.033333,
+      timestamp: DateTime.now(),
+      accuracy: 10.0,
+      altitude: 0.0,
+      altitudeAccuracy: 0.0,
+      heading: 0.0,
+      headingAccuracy: 0.0,
+      speed: 0.0,
+      speedAccuracy: 0.0,
+    );
+    pharmacyProvider.updateUserPosition(testPosition);
+    debugPrint('✅ Position TEST fixée: Plateau, Abidjan (5.316667, -4.033333)');
+
+    /* 
+    // Code original avec géolocalisation réelle (à réactiver plus tard)
     try {
       final locationService = LocationService();
       final position = await locationService.getCurrentPosition();
       if (mounted) {
         pharmacyProvider.updateUserPosition(position);
+        debugPrint('✅ Position: ${position.latitude}, ${position.longitude}');
       }
     } catch (e) {
       debugPrint('⚠️ Impossible de récupérer la position: $e');
+      debugPrint('ℹ️ Les pharmacies seront affichées sans filtre de distance');
     }
+    */
 
     // Charger les pharmacies
     if (mounted) {
+      debugPrint('📥 Chargement des pharmacies...');
       await pharmacyProvider.loadPharmacies();
+      debugPrint('📊 Pharmacies loaded: ${pharmacyProvider.pharmacies.length}');
+      debugPrint('📍 Nearby: ${pharmacyProvider.nearbyPharmacies.length}');
     }
   }
 
@@ -228,6 +258,7 @@ class _HomePageState extends State<HomePage> {
 
                       // Afficher un message si aucune pharmacie
                       if (provider.pharmacies.isEmpty) {
+                        debugPrint('⚠️ Affichage: Aucune pharmacie disponible');
                         return Center(
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -238,9 +269,10 @@ class _HomePageState extends State<HomePage> {
                                 color: Colors.black26,
                               ),
                               const SizedBox(height: 16),
-                              const Text(
-                                'Aucune pharmacie disponible',
-                                style: TextStyle(
+                              Text(
+                                'Aucune pharmacie disponible\nError: ${provider.error ?? "N/A"}',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
                                   color: Colors.black54,
                                   fontSize: 16,
                                 ),
@@ -271,6 +303,13 @@ class _HomePageState extends State<HomePage> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             ...nearbyPharmacies.map((pharmacy) {
+                              final distanceText = userPosition != null
+                                  ? pharmacy.formatDistanceFrom(
+                                      userPosition.latitude,
+                                      userPosition.longitude,
+                                    )
+                                  : '0m';
+
                               final distance = userPosition != null
                                   ? pharmacy.distanceFrom(
                                       userPosition.latitude,
@@ -289,7 +328,7 @@ class _HomePageState extends State<HomePage> {
                                       '${pharmacy.address} · ${pharmacy.phone}',
                                   status: pharmacy.status,
                                   closingTime: pharmacy.closingTimeText,
-                                  distance: '${distance.toStringAsFixed(1)} km',
+                                  distance: distanceText,
                                   isOpen: pharmacy.isOpenNow,
                                   isGuard: pharmacy.isGuard,
                                   onTap: () {},

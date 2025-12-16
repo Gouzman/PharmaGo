@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:geolocator/geolocator.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 /// LocationService
 /// - centralise la logique de permission + récupération position
@@ -8,12 +7,25 @@ import 'package:permission_handler/permission_handler.dart';
 class LocationService {
   /// Request required permissions (WhenInUse). Returns true if granted.
   Future<bool> requestPermission() async {
-    // permission_handler check
-    final status = await Permission.locationWhenInUse.status;
-    if (status.isGranted) return true;
+    // Vérifier la permission actuelle avec Geolocator
+    LocationPermission permission = await Geolocator.checkPermission();
 
-    final result = await Permission.locationWhenInUse.request();
-    return result.isGranted;
+    if (permission == LocationPermission.always ||
+        permission == LocationPermission.whileInUse) {
+      return true;
+    }
+
+    // Demander la permission si refusée
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+
+      if (permission == LocationPermission.always ||
+          permission == LocationPermission.whileInUse) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   /// Get current position once (with a timeout).
@@ -26,7 +38,7 @@ class LocationService {
       throw LocationServiceDisabledException('Location services are disabled.');
     }
 
-    // Check / request permission using permission_handler
+    // Check / request permission using Geolocator native API
     final granted = await requestPermission();
     if (!granted) {
       throw PermissionDeniedException('Location permission denied.');

@@ -15,7 +15,7 @@ namespace PharmaGo.Infrastructure;
 /// </summary>
 public class SupabaseClientService
 {
-    private readonly Client _client;
+    private readonly Supabase.Client _client;
     private readonly string _bucketName = "pharmacy_data";
     private readonly string _jsonFileName = "pharmacies.json";
 
@@ -26,7 +26,7 @@ public class SupabaseClientService
             AutoConnectRealtime = true
         };
 
-        _client = new Client(supabaseUrl, supabaseKey, options);
+        _client = new Supabase.Client(supabaseUrl, supabaseKey, options);
     }
 
     /// <summary>
@@ -38,6 +38,17 @@ public class SupabaseClientService
     }
 
     /// <summary>
+    /// Supprime une pharmacie par son ID
+    /// </summary>
+    public async Task DeletePharmacyAsync(string pharmacyId)
+    {
+        await _client
+            .From<PharmacyDto>()
+            .Where(x => x.Id == pharmacyId)
+            .Delete();
+    }
+
+    /// <summary>
     /// Récupère toutes les pharmacies depuis Supabase
     /// </summary>
     public async Task<List<Pharmacy>> GetPharmaciesAsync()
@@ -45,7 +56,7 @@ public class SupabaseClientService
         try
         {
             var response = await _client
-                .From<PharmacyDto>("pharmacies")
+                .From<PharmacyDto>()
                 .Get();
 
             return response.Models.Select(dto => new Pharmacy
@@ -82,18 +93,18 @@ public class SupabaseClientService
     {
         try
         {
-            var now = DateTime.UtcNow;
+            var today = DateTime.UtcNow.Date;
             var response = await _client
-                .From<GuardScheduleDto>("guard_schedules")
-                .Where(x => x.Start <= now && x.End >= now)
+                .From<GuardScheduleDto>()
+                .Where(x => x.GuardDate == today && x.IsActive == true)
                 .Get();
 
             return response.Models.Select(dto => new GuardSchedule
             {
                 Id = dto.Id,
                 PharmacyId = dto.PharmacyId,
-                Start = dto.Start,
-                End = dto.End,
+                Start = dto.GuardDate,
+                End = dto.GuardDate.AddDays(1),
                 CreatedAt = dto.CreatedAt
             }).ToList();
         }
@@ -111,23 +122,44 @@ public class SupabaseClientService
     {
         try
         {
-            // Réinitialiser toutes les pharmacies à non-garde
-            await _client
-                .From<PharmacyDto>("pharmacies")
-                .Set(x => x.IsGuard, false)
-                .Update();
+            // 1️⃣ Récupérer toutes les pharmacies actuellement en garde
+            var currentGuards = await _client
+                .From<PharmacyDto>()
+                .Where(x => x.IsGuard == true)
+                .Get();
 
-            // Marquer les pharmacies de garde
-            if (guardPharmacyIds.Any())
+            // 2️⃣ Désactiver toutes les pharmacies actuellement en garde
+            foreach (var guard in currentGuards.Models)
             {
-                foreach (var pharmacyId in guardPharmacyIds)
+                guard.IsGuard = false;
+                guard.UpdatedAt = DateTime.UtcNow;
+                await _client
+                    .From<PharmacyDto>()
+                    .Update(guard);
+            }
+
+            // 3️⃣ Si aucune pharmacie de garde → STOP
+            if (guardPharmacyIds == null || guardPharmacyIds.Count == 0)
+            {
+                Console.WriteLine("ℹ️ Aucune pharmacie de garde à activer");
+                return;
+            }
+
+            // 4️⃣ Activer les nouvelles pharmacies de garde
+            foreach (var pharmacyId in guardPharmacyIds)
+            {
+                var pharmacy = await _client
+                    .From<PharmacyDto>()
+                    .Where(x => x.Id == pharmacyId)
+                    .Single();
+
+                if (pharmacy != null)
                 {
+                    pharmacy.IsGuard = true;
+                    pharmacy.UpdatedAt = DateTime.UtcNow;
                     await _client
-                        .From<PharmacyDto>("pharmacies")
-                        .Where(x => x.Id == pharmacyId)
-                        .Set(x => x.IsGuard, true)
-                        .Set(x => x.UpdatedAt, DateTime.UtcNow)
-                        .Update();
+                        .From<PharmacyDto>()
+                        .Update(pharmacy);
                 }
             }
 
@@ -181,9 +213,9 @@ public class SupabaseClientService
         try
         {
             var buckets = await _client.Storage.ListBuckets();
-            if (!buckets.Any(b => b.Name == _bucketName))
+            if (buckets != null && !buckets.Any(b => b.Name == _bucketName))
             {
-                await _client.Storage.CreateBucket(_bucketName, new Supabase.Storage.BucketOptions
+                await _client.Storage.CreateBucket(_bucketName, new Supabase.Storage.BucketUpsertOptions
                 {
                     Public = true
                 });
@@ -193,6 +225,82 @@ public class SupabaseClientService
         catch (Exception ex)
         {
             Console.WriteLine($"⚠️ Erreur lors de la vérification du bucket: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Insère une nouvelle pharmacie dans Supabase
+    /// </summary>
+    public async Task InsertPharmacyAsync(Pharmacy pharmacy)
+    {
+        try
+        {
+            var dto = new PharmacyDto
+            {
+                Id = pharmacy.Id,
+                Name = pharmacy.Name,
+                Lat = pharmacy.Lat,
+                Lng = pharmacy.Lng,
+                Address = pharmacy.Address,
+                Phone = pharmacy.Phone,
+                Commune = pharmacy.Commune,
+                Quartier = pharmacy.Quartier,
+                Assurances = pharmacy.Assurances,
+                IsGuard = pharmacy.IsGuard,
+                UpdatedAt = pharmacy.UpdatedAt,
+                OpenHours = pharmacy.OpenHours != null ? new OpeningHoursDto
+                {
+                    Open = pharmacy.OpenHours.Open,
+                    Close = pharmacy.OpenHours.Close
+                } : null
+            };
+
+            await _client
+                .From<PharmacyDto>()
+                .Insert(dto);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ Erreur lors de l'insertion de la pharmacie {pharmacy.Id}: {ex.Message}");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Met à jour une pharmacie existante dans Supabase
+    /// </summary>
+    public async Task UpdatePharmacyAsync(Pharmacy pharmacy)
+    {
+        try
+        {
+            var dto = new PharmacyDto
+            {
+                Id = pharmacy.Id,
+                Name = pharmacy.Name,
+                Lat = pharmacy.Lat,
+                Lng = pharmacy.Lng,
+                Address = pharmacy.Address,
+                Phone = pharmacy.Phone,
+                Commune = pharmacy.Commune,
+                Quartier = pharmacy.Quartier,
+                Assurances = pharmacy.Assurances,
+                IsGuard = pharmacy.IsGuard,
+                UpdatedAt = DateTime.UtcNow,
+                OpenHours = pharmacy.OpenHours != null ? new OpeningHoursDto
+                {
+                    Open = pharmacy.OpenHours.Open,
+                    Close = pharmacy.OpenHours.Close
+                } : null
+            };
+
+            await _client
+                .From<PharmacyDto>()
+                .Update(dto);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"❌ Erreur lors de la mise à jour de la pharmacie {pharmacy.Id}: {ex.Message}");
+            throw;
         }
     }
 }
@@ -250,9 +358,9 @@ public class OpeningHoursDto
 }
 
 /// <summary>
-/// DTO pour la table guard_schedules dans Supabase
+/// DTO pour la table guard_schedule dans Supabase
 /// </summary>
-[Supabase.Postgrest.Attributes.Table("guard_schedules")]
+[Supabase.Postgrest.Attributes.Table("guard_schedule")]
 public class GuardScheduleDto : Supabase.Postgrest.Models.BaseModel
 {
     [Supabase.Postgrest.Attributes.PrimaryKey("id")]
@@ -261,11 +369,17 @@ public class GuardScheduleDto : Supabase.Postgrest.Models.BaseModel
     [Supabase.Postgrest.Attributes.Column("pharmacy_id")]
     public string PharmacyId { get; set; } = string.Empty;
 
-    [Supabase.Postgrest.Attributes.Column("start")]
-    public DateTime Start { get; set; }
+    [Supabase.Postgrest.Attributes.Column("guard_date")]
+    public DateTime GuardDate { get; set; }
 
-    [Supabase.Postgrest.Attributes.Column("end")]
-    public DateTime End { get; set; }
+    [Supabase.Postgrest.Attributes.Column("start_time")]
+    public TimeSpan? StartTime { get; set; }
+
+    [Supabase.Postgrest.Attributes.Column("end_time")]
+    public TimeSpan? EndTime { get; set; }
+
+    [Supabase.Postgrest.Attributes.Column("is_active")]
+    public bool IsActive { get; set; } = true;
 
     [Supabase.Postgrest.Attributes.Column("created_at")]
     public DateTime CreatedAt { get; set; }

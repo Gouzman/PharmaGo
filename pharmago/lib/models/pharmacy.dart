@@ -1,5 +1,7 @@
 /// Modèle de pharmacie pour l'application PharmaGo
 /// Compatible avec les données du backend .NET + Supabase
+import 'dart:math' as math;
+
 class Pharmacy {
   final String id;
   final String name;
@@ -51,7 +53,40 @@ class Pharmacy {
 
   /// Calcule la distance depuis une position GPS
   double distanceFrom(double userLat, double userLng) {
-    return _calculateDistance(userLat, userLng, lat, lng);
+    // Formule de Haversine (distance entre 2 points GPS)
+    const earthRadiusKm = 6371.0;
+
+    final dLat = _degreesToRadians(lat - userLat);
+    final dLng = _degreesToRadians(lng - userLng);
+
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_degreesToRadians(userLat)) *
+            math.cos(_degreesToRadians(lat)) *
+            math.sin(dLng / 2) *
+            math.sin(dLng / 2);
+
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+
+    return earthRadiusKm * c; // Distance en km
+  }
+
+  /// Formate la distance pour l'affichage (ex: 350 m, 1.2 km)
+  String formatDistanceFrom(double userLat, double userLng) {
+    final distanceKm = distanceFrom(userLat, userLng);
+
+    if (distanceKm < 1.0) {
+      // Moins de 1 km : afficher en mètres
+      final distanceM = (distanceKm * 1000).round();
+      return '$distanceM m';
+    } else {
+      // 1 km ou plus : afficher en km avec 1 décimale
+      return '${distanceKm.toStringAsFixed(1)} km';
+    }
+  }
+
+  static double _degreesToRadians(double degrees) {
+    return degrees * math.pi / 180.0;
   }
 
   /// Vérifie si la pharmacie est ouverte actuellement
@@ -76,43 +111,6 @@ class Pharmacy {
         ? 'Ferme à ${openHours!.close}'
         : 'Ouvre à ${openHours!.open}';
   }
-
-  /// Formule de Haversine simplifiée pour calculer la distance
-  static double _calculateDistance(
-    double lat1,
-    double lon1,
-    double lat2,
-    double lon2,
-  ) {
-    const double earthRadius = 6371; // Rayon de la Terre en km
-    const double pi = 3.14159265359;
-
-    final dLat = (lat2 - lat1) * pi / 180;
-    final dLon = (lon2 - lon1) * pi / 180;
-
-    final a =
-        (1 - _fastCos(dLat)) / 2 +
-        _fastCos(lat1 * pi / 180) *
-            _fastCos(lat2 * pi / 180) *
-            (1 - _fastCos(dLon)) /
-            2;
-
-    return earthRadius * 2 * _fastAsin(_fastSqrt(a));
-  }
-
-  // Approximations rapides pour sin/cos/sqrt/asin
-  static double _fastCos(double x) => 1 - (x * x) / 2 + (x * x * x * x) / 24;
-  static double _fastSqrt(double x) {
-    if (x <= 0) return 0;
-    double z = x;
-    for (int i = 0; i < 5; i++) {
-      z = (z + x / z) / 2;
-    }
-    return z;
-  }
-
-  static double _fastAsin(double x) =>
-      x + (x * x * x) / 6 + (3 * x * x * x * x * x) / 40;
 }
 
 /// Horaires d'ouverture d'une pharmacie

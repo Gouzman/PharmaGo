@@ -4,52 +4,70 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Service Flutter pour charger et gérer les pharmacies depuis le backend
 class PharmacyDataService {
-  // 🔧 Configurez votre URL backend ici (ou null pour utiliser les données de test)
-  static const String? _backendUrl =
-      null; // Changez en 'http://localhost:5000' pour backend local
+  // 🔧 URL PUBLIQUE DU JSON SUPABASE (accès direct sans backend)
+  static const String _directJsonUrl =
+      'https://wglrryhnrqninxzrmowh.supabase.co/storage/v1/object/public/pharmacy_data/pharmacies.json';
+
+  // 🔧 URL backend (optionnel, utilisé uniquement si _useDirectUrl = false)
+  static const String? _backendUrl = null; // 'http://localhost:5000'
+
   static const String _cacheKey = 'pharmacies_cache';
   static const String _versionKey = 'pharmacies_version';
 
-  // Mode de test : utilise des données locales si le backend n'est pas configuré
-  static const bool _useTestData = true;
+  // Mode direct : charge directement depuis Supabase (recommandé)
+  static const bool _useDirectUrl = true;
+
+  // Mode de test : utilise des données locales si activé
+  static const bool _useTestData = false;
+
+  // Cache activé (false = utilise le cache, true = ignore le cache)
+  static const bool _ignoreCache = false;
 
   /// Charge les pharmacies depuis le cache ou le backend
   Future<PharmacyData?> loadPharmacies({bool forceRefresh = false}) async {
     final prefs = await SharedPreferences.getInstance();
 
     // MODE TEST : Utiliser des données de démonstration
-    if (_useTestData && _backendUrl == null) {
-      print('🧪 Mode TEST : Utilisation de données de démonstration');
+    if (_useTestData) {
       return _getTestData();
     }
 
     // 1. Essayer de charger depuis le cache si pas de refresh forcé
-    if (!forceRefresh) {
+    if (!forceRefresh && !_ignoreCache) {
       final cachedJson = prefs.getString(_cacheKey);
       final cachedVersion = prefs.getInt(_versionKey);
 
       if (cachedJson != null && cachedVersion != null) {
-        print('📦 Chargement depuis le cache local');
         return PharmacyData.fromJson(jsonDecode(cachedJson));
       }
     }
 
-    // 2. Récupérer l'URL du JSON depuis le backend
+    // 2. Déterminer l'URL du JSON
     try {
-      print('🌐 Récupération de l\'URL du JSON...');
-      final latestResponse = await http
-          .get(Uri.parse('$_backendUrl/api/pharmacies/latest'))
-          .timeout(const Duration(seconds: 10));
+      String jsonUrl;
 
-      if (latestResponse.statusCode != 200) {
-        throw Exception('Impossible de récupérer l\'URL du JSON');
+      if (_useDirectUrl) {
+        // MODE DIRECT : Utiliser l'URL publique Supabase
+        jsonUrl = _directJsonUrl;
+      } else {
+        // MODE BACKEND : Récupérer l'URL depuis le backend .NET
+        if (_backendUrl == null) {
+          throw Exception('Backend URL not configured');
+        }
+
+        final latestResponse = await http
+            .get(Uri.parse('$_backendUrl/api/pharmacies/latest'))
+            .timeout(const Duration(seconds: 10));
+
+        if (latestResponse.statusCode != 200) {
+          throw Exception('Impossible de récupérer l\'URL du JSON');
+        }
+
+        final latestData = jsonDecode(latestResponse.body);
+        jsonUrl = latestData['url'] as String;
       }
 
-      final latestData = jsonDecode(latestResponse.body);
-      final jsonUrl = latestData['url'] as String;
-
       // 3. Télécharger le JSON depuis Supabase Storage
-      print('📥 Téléchargement du JSON depuis: $jsonUrl');
       final pharmaciesResponse = await http.get(Uri.parse(jsonUrl));
 
       if (pharmaciesResponse.statusCode != 200) {
@@ -59,37 +77,31 @@ class PharmacyDataService {
       final pharmaciesJson = jsonDecode(pharmaciesResponse.body);
       final data = PharmacyData.fromJson(pharmaciesJson);
 
-      // 4. Vérifier si la version a changé
+      // 4. Vérifier si la version a changé et sauvegarder en cache
       final cachedVersion = prefs.getInt(_versionKey);
       if (cachedVersion != data.version) {
-        print('✨ Nouvelle version détectée: ${data.version}');
-
-        // 5. Sauvegarder en cache
         await prefs.setString(_cacheKey, pharmaciesResponse.body);
         await prefs.setInt(_versionKey, data.version);
-
-        print('✅ Cache mis à jour avec ${data.pharmacies.length} pharmacies');
-      } else {
-        print('ℹ️ Version inchangée');
       }
 
       return data;
-    } catch (e) {
+    } catch (e, stack) {
       print('❌ Erreur lors du chargement: $e');
+      print('Stack: $stack');
 
       // Fallback: essayer de charger depuis le cache même si expiré
       final cachedJson = prefs.getString(_cacheKey);
       if (cachedJson != null) {
-        print('⚠️ Utilisation du cache expiré comme fallback');
         return PharmacyData.fromJson(jsonDecode(cachedJson));
       }
 
       // Dernier fallback : données de test si disponible
       if (_useTestData) {
-        print('🧪 Fallback vers les données de test');
+        print('⚠️ Fallback vers les données de test');
         return _getTestData();
       }
 
+      print('💥 Aucune donnée disponible');
       return null;
     }
   }
@@ -221,8 +233,7 @@ class PharmacyDataService {
 
   /// Vérifie s'il y a une mise à jour disponible
   Future<bool> hasUpdate() async {
-    // Mode test : toujours retourner false
-    if (_useTestData && _backendUrl == null) {
+    if (_useTestData) {
       return false;
     }
 
@@ -232,24 +243,21 @@ class PharmacyDataService {
 
       if (cachedVersion == null) return true;
 
-      final latestResponse = await http
-          .get(Uri.parse('$_backendUrl/api/pharmacies/latest'))
+      // Télécharger le JSON pour comparer la version
+      final jsonUrl = _useDirectUrl
+          ? _directJsonUrl
+          : '$_backendUrl/api/pharmacies/latest';
+      final response = await http
+          .get(Uri.parse(jsonUrl))
           .timeout(const Duration(seconds: 5));
 
-      if (latestResponse.statusCode != 200) return false;
+      if (response.statusCode != 200) return false;
 
-      final latestData = jsonDecode(latestResponse.body);
-      final jsonUrl = latestData['url'] as String;
-
-      final pharmaciesResponse = await http.get(Uri.parse(jsonUrl));
-      if (pharmaciesResponse.statusCode != 200) return false;
-
-      final pharmaciesJson = jsonDecode(pharmaciesResponse.body);
+      final pharmaciesJson = jsonDecode(response.body);
       final remoteVersion = pharmaciesJson['version'] as int;
 
       return remoteVersion > cachedVersion;
     } catch (e) {
-      print('❌ Erreur lors de la vérification de mise à jour: $e');
       return false;
     }
   }
@@ -259,7 +267,7 @@ class PharmacyDataService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_cacheKey);
     await prefs.remove(_versionKey);
-    print('🗑️ Cache effacé');
+    // Cache effacé
   }
 }
 

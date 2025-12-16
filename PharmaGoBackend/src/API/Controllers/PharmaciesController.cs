@@ -215,6 +215,33 @@ public class PharmaciesController : ControllerBase
     }
 
     /// <summary>
+    /// Force la mise à jour manuelle depuis OpenStreetMap (admin)
+    /// </summary>
+    [HttpPost("sync/osm")]
+    [ProducesResponseType(200)]
+    public async Task<IActionResult> ForceSyncFromOsm()
+    {
+        try
+        {
+            _logger.LogInformation("⚡ Synchronisation OSM forcée demandée");
+            
+            // Déclencher immédiatement la synchronisation complète
+            await _pharmacyUpdater.ForceSyncAsync();
+            
+            return Ok(new
+            {
+                success = true,
+                message = "Synchronisation OpenStreetMap démarrée"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ Erreur lors de la synchronisation OSM forcée");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Force la mise à jour des gardes (admin)
     /// </summary>
     [HttpPost("guard/update")]

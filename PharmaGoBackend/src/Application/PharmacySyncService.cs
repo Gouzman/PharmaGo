@@ -16,11 +16,16 @@ public class PharmacySyncService
 {
     private readonly SupabaseClientService _supabaseClient;
     private readonly PharmacyRepository _repository;
+    private readonly OsmSyncService _osmSyncService;
 
-    public PharmacySyncService(SupabaseClientService supabaseClient, PharmacyRepository repository)
+    public PharmacySyncService(
+        SupabaseClientService supabaseClient, 
+        PharmacyRepository repository,
+        OsmSyncService osmSyncService)
     {
         _supabaseClient = supabaseClient;
         _repository = repository;
+        _osmSyncService = osmSyncService;
     }
 
     /// <summary>
@@ -138,7 +143,7 @@ public class PharmacySyncService
     }
 
     /// <summary>
-    /// Synchronisation complète : garde + JSON + upload
+    /// Synchronisation complète : OSM → Supabase → garde → JSON → upload
     /// </summary>
     public async Task<PharmacySyncResult> FullSyncAsync()
     {
@@ -147,11 +152,36 @@ public class PharmacySyncService
             Console.WriteLine("🚀 Démarrage de la synchronisation complète...");
             var startTime = DateTime.UtcNow;
 
-            // Synchroniser les gardes
-            await SyncGuardPharmaciesAsync();
+            // 1️⃣ Synchroniser depuis OSM vers Supabase
+            Console.WriteLine("📍 PHASE 1 : Synchronisation OpenStreetMap → Supabase");
+            var osmResult = await _osmSyncService.SyncPharmaciesFromOsmAsync();
 
-            // Upload le JSON
+            if (!osmResult.Success)
+            {
+                Console.WriteLine($"❌ Échec de la synchronisation OSM: {osmResult.ErrorMessage}");
+                return new PharmacySyncResult
+                {
+                    Success = false,
+                    ErrorMessage = $"Échec sync OSM: {osmResult.ErrorMessage}",
+                    SyncedAt = DateTime.UtcNow,
+                    Duration = DateTime.UtcNow - startTime
+                };
+            }
+
+            Console.WriteLine($"✅ Phase 1 terminée : {osmResult.SyncedCount} pharmacie(s) synchronisée(s)");
+            Console.WriteLine();
+
+            // 2️⃣ Synchroniser les gardes
+            Console.WriteLine("📍 PHASE 2 : Synchronisation des gardes");
+            await SyncGuardPharmaciesAsync();
+            Console.WriteLine("✅ Phase 2 terminée");
+            Console.WriteLine();
+
+            // 3️⃣ Upload le JSON
+            Console.WriteLine("📍 PHASE 3 : Génération et upload du JSON");
             var publicUrl = await UploadJsonToStorageAsync();
+            Console.WriteLine("✅ Phase 3 terminée");
+            Console.WriteLine();
 
             var duration = DateTime.UtcNow - startTime;
 

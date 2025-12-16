@@ -1,0 +1,248 @@
+# ═══════════════════════════════════════════════════════════════
+# PHARMAGO - .gitignore
+# ═══════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────
+# FICHIERS SENSIBLES - NE JAMAIS COMMITER
+# ───────────────────────────────────────────────────────────────
+appsettings.json
+appsettings.*.json
+!appsettings.Development.json.example
+*.env
+.env
+.env.local
+.env.production
+secrets.json
+
+# Clés API
+**/google-services.json
+**/GoogleService-Info.plist
+
+# ───────────────────────────────────────────────────────────────
+# FLUTTER
+# ───────────────────────────────────────────────────────────────
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+coverage/
+.flutter_export_environment.sh
+
+# Flutter/Dart/Pub related
+**/doc/api/
+.dart_tool/
+.packages
+.pub/
+pubspec.lock
+
+# Android related
+**/android/**/gradle-wrapper.jar
+**/android/.gradle
+**/android/captures/
+**/android/gradlew
+**/android/gradlew.bat
+**/android/local.properties
+**/android/**/GeneratedPluginRegistrant.java
+**/android/key.properties
+*.jks
+
+# iOS/XCode related
+**/ios/**/*.mode1v3
+**/ios/**/*.mode2v3
+**/ios/**/*.moved-aside
+**/ios/**/*.pbxuser
+**/ios/**/*.perspectivev3
+**/ios/**/*sync/
+**/ios/**/.sconsign.dblite
+**/ios/**/.tags*
+**/ios/**/.vagrant/
+**/ios/**/DerivedData/
+**/ios/**/Icon?
+**/ios/**/Pods/
+**/ios/**/.symlinks/
+**/ios/**/profile
+**/ios/**/xcuserdata
+**/ios/.generated/
+**/ios/Flutter/.last_build_id
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/ephemeral
+**/ios/Flutter/app.flx
+**/ios/Flutter/app.zip
+**/ios/Flutter/flutter_assets/
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/ServiceDefinitions.json
+**/ios/Runner/GeneratedPluginRegistrant.*
+
+# Web related
+lib/generated_plugin_registrant.dart
+
+# macOS
+**/macos/Flutter/GeneratedPluginRegistrant.swift
+**/macos/Flutter/ephemeral
+
+# Windows
+**/windows/flutter/generated_plugin_registrant.cc
+**/windows/flutter/generated_plugin_registrant.h
+**/windows/flutter/ephemeral
+
+# Linux
+**/linux/flutter/generated_plugin_registrant.cc
+**/linux/flutter/generated_plugin_registrant.h
+
+# ───────────────────────────────────────────────────────────────
+# .NET / C#
+# ───────────────────────────────────────────────────────────────
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# .NET Core
+project.lock.json
+project.fragment.lock.json
+artifacts/
+**/Properties/launchSettings.json
+
+# NuGet
+*.nupkg
+*.snupkg
+**/packages/*
+!**/packages/build/
+*.nuget.props
+*.nuget.targets
+
+# ───────────────────────────────────────────────────────────────
+# IDE / EDITEURS
+# ───────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.iml
+.atom/
+.buildlog/
+.history
+.svn/
+
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# ───────────────────────────────────────────────────────────────
+# SYSTÈME D'EXPLOITATION
+# ───────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ───────────────────────────────────────────────────────────────
+# LOGS & TEMPORAIRES
+# ───────────────────────────────────────────────────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# ───────────────────────────────────────────────────────────────
+# CACHE & BUILD
+# ───────────────────────────────────────────────────────────────
+.cache/
+.temp/
+.tmp/
+*.tmp
+*.bak
+*.swp
+*~.nib
+
+# ───────────────────────────────────────────────────────────────
+# DOCUMENTATION GÉNÉRÉE
+# ───────────────────────────────────────────────────────────────
+doc/api/
+docs/_build/
+
+# ───────────────────────────────────────────────────────────────
+# TESTS & COVERAGE
+# ───────────────────────────────────────────────────────────────
+coverage/
+*.coverage
+*.coveragexml
+TestResults/
+
+# ───────────────────────────────────────────────────────────────
+# FIREBASE (si utilisé)
+# ───────────────────────────────────────────────────────────────
+.firebase/
+firebase-debug.log
+firestore-debug.log
+
+# ───────────────────────────────────────────────────────────────
+# NODE_MODULES (si utilisé)
+# ───────────────────────────────────────────────────────────────
+node_modules/
+
+# ───────────────────────────────────────────────────────────────
+# FICHIERS SPÉCIFIQUES AU PROJET
+# ───────────────────────────────────────────────────────────────
+
+# Fichiers de configuration locaux (à ne pas partager)
+**/appsettings.Production.json
+**/local.properties
+
+# Fichiers de build Flutter
+**/build/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+
+# Fichiers générés par les outils
+**/*.g.dart
+**/*.freezed.dart
+**/*.mocks.dart
+
+# ═══════════════════════════════════════════════════════════════
+# FICHIERS À INCLURE (exceptions)
+# ═══════════════════════════════════════════════════════════════
+!**/supabase_schema_complete.sql
+!**/appsettings.Development.json.example
+!README.md
+!MIGRATION_OSM_GUIDE.md
+!CORRECTIONS_INCOHERENCES.md
+!SYNTHESE_MIGRATION.md
+!INDEX_DOCUMENTATION.md
+
+# ═══════════════════════════════════════════════════════════════
+# FIN
+# ═══════════════════════════════════════════════════════════════

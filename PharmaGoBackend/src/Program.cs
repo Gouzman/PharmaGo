@@ -56,6 +56,10 @@ builder.Services.AddSingleton<SupabaseClientService>(sp =>
 
 builder.Services.AddScoped<PharmacyRepository>();
 
+// Services OSM
+builder.Services.AddHttpClient<OverpassService>();
+builder.Services.AddScoped<OsmSyncService>();
+
 // Services Application
 builder.Services.AddScoped<PharmacySyncService>();
 

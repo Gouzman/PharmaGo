@@ -9,13 +9,14 @@ namespace PharmaGo.Cron;
 
 /// <summary>
 /// Service CRON pour la mise à jour automatique du fichier JSON des pharmacies
-/// S'exécute toutes les 6 heures
+/// S'exécute une fois par jour à 3h du matin (heure serveur)
 /// </summary>
 public class PharmacyUpdater : BackgroundService
 {
     private readonly ILogger<PharmacyUpdater> _logger;
     private readonly PharmacySyncService _syncService;
-    private readonly TimeSpan _updateInterval = TimeSpan.FromHours(6); // Toutes les 6 heures
+    private readonly TimeSpan _updateInterval = TimeSpan.FromDays(1); // Une fois par jour
+    private readonly TimeSpan _targetTime = new TimeSpan(3, 0, 0); // 3h du matin
 
     public PharmacyUpdater(ILogger<PharmacyUpdater> logger, PharmacySyncService syncService)
     {
@@ -25,17 +26,34 @@ public class PharmacyUpdater : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("🕐 PharmacyUpdater démarré - Intervalle: {Interval} heures", _updateInterval.TotalHours);
+        _logger.LogInformation("🕐 PharmacyUpdater démarré - Planifié à {Time} chaque jour", _targetTime);
 
-        // Exécuter immédiatement au démarrage
+        // Exécuter immédiatement au démarrage (pour initialiser les données)
         await RunAutoSyncAsync();
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                // Attendre l'intervalle configuré
-                await Task.Delay(_updateInterval, stoppingToken);
+                // Calculer le délai jusqu'à la prochaine exécution (3h du matin)
+                var now = DateTime.Now;
+                var nextRun = now.Date.Add(_targetTime);
+
+                // Si on a dépassé 3h aujourd'hui, planifier pour demain
+                if (now > nextRun)
+                {
+                    nextRun = nextRun.AddDays(1);
+                }
+
+                var delay = nextRun - now;
+
+                _logger.LogInformation("⏰ Prochaine synchronisation prévue à : {NextRun} (dans {Hours}h {Minutes}m)", 
+                    nextRun.ToString("yyyy-MM-dd HH:mm:ss"), 
+                    (int)delay.TotalHours, 
+                    delay.Minutes);
+
+                // Attendre jusqu'à la prochaine exécution
+                await Task.Delay(delay, stoppingToken);
 
                 // Exécuter la synchronisation
                 await RunAutoSyncAsync();
@@ -48,8 +66,8 @@ public class PharmacyUpdater : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "❌ Erreur dans PharmacyUpdater");
-                // En cas d'erreur, attendre 30 minutes avant de réessayer
-                await Task.Delay(TimeSpan.FromMinutes(30), stoppingToken);
+                // En cas d'erreur, attendre 1 heure avant de réessayer
+                await Task.Delay(TimeSpan.FromHours(1), stoppingToken);
             }
         }
 

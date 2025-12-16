@@ -1,11 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../../utils/location_service.dart' as loc_service;
-import '../../../utils/polyline_service.dart';
-import '../navigation/yango_navigation_page.dart';
+import '../../../services/osrm_service.dart';
+import '../navigation/osm_navigation_page.dart';
 
 class PharmacyDetailPage extends StatefulWidget {
   final String pharmacyId;
@@ -34,55 +34,19 @@ class PharmacyDetailPage extends StatefulWidget {
 class _PharmacyDetailPageState extends State<PharmacyDetailPage> {
   final loc_service.LocationService _locationService =
       loc_service.LocationService();
-  GoogleMapController? _mapController;
+  final MapController _mapController = MapController();
+  final OSRMService _osrmService = OSRMService();
   Position? _userPosition;
   StreamSubscription<Position>? _posSub;
-  BitmapDescriptor? _pharmacyIcon;
-  BitmapDescriptor? _userIcon;
-  String? _darkMapStyle;
 
-  // Nouvelles variables pour polyline
+  // Variables pour polyline
   List<LatLng> routePoints = [];
-  Set<Polyline> polylines = {};
   bool loadingPolyline = true;
 
   @override
   void initState() {
     super.initState();
-    _loadMapStyle();
-    _loadCustomIcons();
     _initLocation();
-  }
-
-  Future<void> _loadMapStyle() async {
-    try {
-      _darkMapStyle = await rootBundle.loadString(
-        'assets/map_styles/dark.json',
-      );
-    } catch (e) {
-      debugPrint('Erreur chargement style map: $e');
-    }
-  }
-
-  Future<void> _loadCustomIcons() async {
-    try {
-      // Icône pharmacie personnalisée (si disponible)
-      _pharmacyIcon = await BitmapDescriptor.asset(
-        const ImageConfiguration(size: Size(64, 64)),
-        'assets/icons/pharmacy_pin.png',
-      );
-    } catch (e) {
-      // Fallback sur l'icône par défaut
-      _pharmacyIcon = BitmapDescriptor.defaultMarkerWithHue(
-        BitmapDescriptor.hueGreen,
-      );
-      debugPrint('Icône pharmacie non trouvée, utilisation icône par défaut');
-    }
-
-    // Icône utilisateur
-    _userIcon = BitmapDescriptor.defaultMarkerWithHue(
-      BitmapDescriptor.hueAzure,
-    );
   }
 
   Future<void> _initLocation() async {
@@ -238,28 +202,15 @@ class _PharmacyDetailPageState extends State<PharmacyDetailPage> {
 
     try {
       debugPrint('🛣️ Chargement de la route...');
-      const apiKey = "AIzaSyCYI5_sNO22IdUx37pupt4p67JyiP_56hg";
-      final service = PolylineService(apiKey);
 
       final user = LatLng(_userPosition!.latitude, _userPosition!.longitude);
       final dest = LatLng(widget.lat, widget.lng);
 
-      routePoints = await service.getRoutePolyline(
-        origin: user,
-        destination: dest,
-      );
-      debugPrint('✅ Route chargée: ${routePoints.length} points');
-
-      polylines = {
-        Polyline(
-          polylineId: const PolylineId("route"),
-          points: routePoints,
-          width: 6,
-          color: const Color(0xFF4DB6AC),
-          endCap: Cap.roundCap,
-          startCap: Cap.roundCap,
-        ),
-      };
+      final route = await _osrmService.getRoute(start: user, end: dest);
+      if (route != null) {
+        routePoints = route.points;
+        debugPrint('✅ Route chargée: ${routePoints.length} points');
+      }
 
       if (mounted) {
         setState(() => loadingPolyline = false);
@@ -273,10 +224,10 @@ class _PharmacyDetailPageState extends State<PharmacyDetailPage> {
   }
 
   void _updateCameraToShowBothMarkers() {
-    if (_mapController == null || _userPosition == null) return;
+    if (_userPosition == null) return;
 
     final bounds = LatLngBounds(
-      southwest: LatLng(
+      LatLng(
         _userPosition!.latitude < widget.lat
             ? _userPosition!.latitude
             : widget.lat,
@@ -284,7 +235,7 @@ class _PharmacyDetailPageState extends State<PharmacyDetailPage> {
             ? _userPosition!.longitude
             : widget.lng,
       ),
-      northeast: LatLng(
+      LatLng(
         _userPosition!.latitude > widget.lat
             ? _userPosition!.latitude
             : widget.lat,
@@ -294,19 +245,20 @@ class _PharmacyDetailPageState extends State<PharmacyDetailPage> {
       ),
     );
 
-    _mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 80));
+    _mapController.fitCamera(
+      CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(80)),
+    );
   }
 
   Future<void> _fitCameraToPolyline() async {
-    if (routePoints.isEmpty || _mapController == null) {
-      // Fallback sur la méthode classique
+    if (routePoints.isEmpty) {
       _updateCameraToShowBothMarkers();
       return;
     }
 
     final bounds = _createBounds(routePoints);
-    await _mapController!.animateCamera(
-      CameraUpdate.newLatLngBounds(bounds, 60),
+    _mapController.fitCamera(
+      CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(60)),
     );
   }
 
@@ -323,13 +275,13 @@ class _PharmacyDetailPageState extends State<PharmacyDetailPage> {
       if (p.longitude < y0) y0 = p.longitude;
     }
 
-    return LatLngBounds(southwest: LatLng(x0, y0), northeast: LatLng(x1, y1));
+    return LatLngBounds(LatLng(x0, y0), LatLng(x1, y1));
   }
 
   @override
   void dispose() {
     _posSub?.cancel();
-    _mapController?.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -340,72 +292,71 @@ class _PharmacyDetailPageState extends State<PharmacyDetailPage> {
       body: SafeArea(
         child: Stack(
           children: [
-            // GOOGLE MAP en plein écran
-            GoogleMap(
-              initialCameraPosition: CameraPosition(
-                target: LatLng(widget.lat, widget.lng),
-                zoom: 13.0,
-              ),
-              mapType: MapType.normal,
-              style: _darkMapStyle,
-              polylines: polylines,
-              onMapCreated: (controller) {
-                debugPrint('🗺️ GoogleMap créée');
-                _mapController = controller;
+            // OPENSTREETMAP en plein écran
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: LatLng(widget.lat, widget.lng),
+                initialZoom: 13.0,
+                onMapReady: () {
+                  debugPrint('🗺️ FlutterMap créée');
 
-                // Appliquer le style dark après création
-                if (_darkMapStyle != null) {
-                  controller.setMapStyle(_darkMapStyle);
-                }
-
-                // Ajuster la caméra après un délai
-                Future.delayed(const Duration(milliseconds: 1000), () {
-                  if (mounted) {
-                    if (routePoints.isNotEmpty) {
-                      _fitCameraToPolyline();
-                    } else if (_userPosition != null) {
-                      _updateCameraToShowBothMarkers();
+                  // Ajuster la caméra après un délai
+                  Future.delayed(const Duration(milliseconds: 1000), () {
+                    if (mounted) {
+                      if (routePoints.isNotEmpty) {
+                        _fitCameraToPolyline();
+                      } else if (_userPosition != null) {
+                        _updateCameraToShowBothMarkers();
+                      }
                     }
-                  }
-                });
-              },
-              markers: {
-                Marker(
-                  markerId: const MarkerId("pharmacy"),
-                  position: LatLng(widget.lat, widget.lng),
-                  icon: BitmapDescriptor.defaultMarkerWithHue(
-                    BitmapDescriptor.hueRed,
-                  ),
-                  infoWindow: InfoWindow(
-                    title: widget.name,
-                    snippet: widget.address,
-                  ),
+                  });
+                },
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                  userAgentPackageName: 'com.pharmago.app',
                 ),
-                if (_userPosition != null)
-                  Marker(
-                    markerId: const MarkerId("user"),
-                    position: LatLng(
-                      _userPosition!.latitude,
-                      _userPosition!.longitude,
-                    ),
-                    icon: BitmapDescriptor.defaultMarkerWithHue(
-                      BitmapDescriptor.hueBlue,
-                    ),
-                    infoWindow: const InfoWindow(title: "Votre position"),
+                if (routePoints.isNotEmpty)
+                  PolylineLayer(
+                    polylines: [
+                      Polyline(
+                        points: routePoints,
+                        strokeWidth: 6.0,
+                        color: const Color(0xFF4DB6AC),
+                      ),
+                    ],
                   ),
-              },
-              myLocationEnabled: false,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: true,
-              compassEnabled: false,
-              mapToolbarEnabled: false,
-              rotateGesturesEnabled: true,
-              scrollGesturesEnabled: true,
-              tiltGesturesEnabled: false,
-              zoomGesturesEnabled: true,
-              buildingsEnabled: true,
-              trafficEnabled: false,
-              padding: const EdgeInsets.only(top: 280, bottom: 100),
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: LatLng(widget.lat, widget.lng),
+                      width: 40,
+                      height: 40,
+                      child: const Icon(
+                        Icons.local_pharmacy,
+                        color: Colors.red,
+                        size: 40,
+                      ),
+                    ),
+                    if (_userPosition != null)
+                      Marker(
+                        point: LatLng(
+                          _userPosition!.latitude,
+                          _userPosition!.longitude,
+                        ),
+                        width: 40,
+                        height: 40,
+                        child: const Icon(
+                          Icons.my_location,
+                          color: Colors.blue,
+                          size: 40,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
             ),
 
             // CARD INFO flottante en haut
@@ -555,11 +506,11 @@ class _PharmacyDetailPageState extends State<PharmacyDetailPage> {
                           );
                         }
 
-                        // Navigation vers YangoNavigationPage
+                        // Navigation vers OSMNavigationPage
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => YangoNavigationPage(
+                            builder: (context) => OSMNavigationPage(
                               userStart: userStart,
                               destination: LatLng(widget.lat, widget.lng),
                               destinationName: widget.name,
