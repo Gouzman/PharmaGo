@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:pharmago/models/pharmacy.dart';
 import 'package:pharmago/providers/pharmacy_provider.dart';
 import 'package:pharmago/utils/location_service.dart';
+import 'package:pharmago/utils/pharmacy_distance.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -304,18 +305,40 @@ class _HomePageState extends State<HomePage> {
                           children: [
                             ...nearbyPharmacies.map((pharmacy) {
                               final distanceText = userPosition != null
-                                  ? pharmacy.formatDistanceFrom(
-                                      userPosition.latitude,
-                                      userPosition.longitude,
+                                  ? PharmacyDistance.formatDistance(
+                                      userLat: userPosition.latitude,
+                                      userLng: userPosition.longitude,
+                                      pharmacyLat: pharmacy.lat,
+                                      pharmacyLng: pharmacy.lng,
                                     )
-                                  : '0m';
+                                  : '0 m';
 
                               final distance = userPosition != null
-                                  ? pharmacy.distanceFrom(
-                                      userPosition.latitude,
-                                      userPosition.longitude,
+                                  ? PharmacyDistance.distanceInMeters(
+                                      userLat: userPosition.latitude,
+                                      userLng: userPosition.longitude,
+                                      pharmacyLat: pharmacy.lat,
+                                      pharmacyLng: pharmacy.lng,
                                     )
                                   : 0.0;
+
+                              // Construire la ligne d'adresse uniquement si données disponibles
+                              String addressLine = '';
+                              if (pharmacy.address.isNotEmpty &&
+                                  pharmacy.phone.isNotEmpty) {
+                                addressLine =
+                                    '${pharmacy.address} · ${pharmacy.phone}';
+                              } else if (pharmacy.address.isNotEmpty) {
+                                addressLine = pharmacy.address;
+                              } else if (pharmacy.phone.isNotEmpty) {
+                                addressLine = pharmacy.phone;
+                              }
+                              // Si rien n'est disponible, afficher le quartier ou commune
+                              if (addressLine.isEmpty) {
+                                addressLine = pharmacy.quartier.isNotEmpty
+                                    ? pharmacy.quartier
+                                    : pharmacy.commune;
+                              }
 
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 12),
@@ -324,8 +347,7 @@ class _HomePageState extends State<HomePage> {
                                   subtitle: pharmacy.quartier.isNotEmpty
                                       ? pharmacy.quartier
                                       : pharmacy.commune,
-                                  address:
-                                      '${pharmacy.address} · ${pharmacy.phone}',
+                                  address: addressLine,
                                   status: pharmacy.status,
                                   closingTime: pharmacy.closingTimeText,
                                   distance: distanceText,

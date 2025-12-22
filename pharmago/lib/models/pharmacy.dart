@@ -1,6 +1,7 @@
 /// Modèle de pharmacie pour l'application PharmaGo
 /// Compatible avec les données du backend .NET + Supabase
 import 'dart:math' as math;
+import '../utils/pharmacy_formatter.dart';
 
 class Pharmacy {
   final String id;
@@ -32,21 +33,49 @@ class Pharmacy {
   });
 
   /// Crée une pharmacie depuis JSON (backend)
+  /// Applique la normalisation des données OSM
   factory Pharmacy.fromJson(Map<String, dynamic> json) {
+    // Récupérer les valeurs brutes
+    final rawName = (json['name'] as String?) ?? '';
+    final rawAddress = (json['address'] as String?) ?? '';
+    final rawCommune = (json['commune'] as String?) ?? '';
+    final rawQuartier = (json['quartier'] as String?) ?? '';
+    final rawPhone = (json['phone'] as String?) ?? '';
+
+    // Normaliser les valeurs
+    String normalizedName = PharmacyFormatter.normalizeName(rawName);
+
+    // Si le nom est mal formé, générer un nom de fallback
+    if (PharmacyFormatter.isNameMalformed(rawName)) {
+      normalizedName = PharmacyFormatter.generateFallbackName(
+        rawCommune,
+        rawQuartier,
+      );
+    }
+
+    // Détecter automatiquement si c'est une pharmacie de garde
+    // Priorité : valeur JSON > détection automatique
+    bool isGuardPharmacy =
+        json['is_guard'] as bool? ??
+        PharmacyFormatter.detectIsGuard(
+          name: rawName,
+          osmTags: json['osm_tags'] as Map<String, dynamic>?,
+        );
+
     return Pharmacy(
       id: json['id'] as String,
-      name: json['name'] as String,
+      name: normalizedName,
       lat: (json['lat'] as num).toDouble(),
       lng: (json['lng'] as num).toDouble(),
-      address: json['address'] as String? ?? '',
-      commune: json['commune'] as String? ?? '',
-      quartier: json['quartier'] as String? ?? '',
-      phone: json['phone'] as String? ?? '',
+      address: PharmacyFormatter.normalizeAddress(rawAddress),
+      commune: PharmacyFormatter.normalizeCommune(rawCommune),
+      quartier: PharmacyFormatter.normalizeQuartier(rawQuartier),
+      phone: PharmacyFormatter.formatPhoneNumber(rawPhone),
       assurances: (json['assurances'] as List?)?.cast<String>() ?? [],
       openHours: json['open_hours'] != null
           ? OpeningHours.fromJson(json['open_hours'])
           : null,
-      isGuard: json['is_guard'] as bool? ?? false,
+      isGuard: isGuardPharmacy,
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
   }
@@ -91,12 +120,14 @@ class Pharmacy {
 
   /// Vérifie si la pharmacie est ouverte actuellement
   bool get isOpenNow {
-    if (openHours == null) return true; // Assume ouvert si pas d'horaires
+    // Si pas d'horaires définies, considérer comme fermée (sauf si de garde)
+    if (openHours == null) return isGuard;
 
     final now = DateTime.now();
     final currentTime =
         '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
 
+    // Vérifier si l'heure actuelle est dans les horaires d'ouverture
     return currentTime.compareTo(openHours!.open) >= 0 &&
         currentTime.compareTo(openHours!.close) <= 0;
   }

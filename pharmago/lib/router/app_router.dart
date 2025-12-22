@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
+import '../models/pharmacy.dart';
 import '../services/pharmacy_data_service.dart';
 import '../ui/pages/splash/splash_page.dart';
 import '../ui/pages/onboarding/onboarding_page.dart';

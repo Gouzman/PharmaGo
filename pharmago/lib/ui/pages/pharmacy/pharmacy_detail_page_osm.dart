@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
+import '../../../models/pharmacy.dart';
 import '../../../services/pharmacy_data_service.dart';
 import '../../../services/osrm_service.dart';
 import '../../../services/location_service.dart';
@@ -275,15 +276,23 @@ class _PharmacyDetailPageOSMState extends State<PharmacyDetailPageOSM> {
 
                       const SizedBox(height: 20),
 
-                      // Adresse
-                      _InfoRow(
-                        icon: Icons.location_on,
-                        text:
-                            '${widget.pharmacy.address}, ${widget.pharmacy.quartier}',
-                        color: Colors.blue,
-                      ),
+                      // Adresse (afficher seulement si disponible)
+                      if (widget.pharmacy.address.isNotEmpty ||
+                          widget.pharmacy.quartier.isNotEmpty)
+                        _InfoRow(
+                          icon: Icons.location_on,
+                          text: [
+                            if (widget.pharmacy.address.isNotEmpty)
+                              widget.pharmacy.address,
+                            if (widget.pharmacy.quartier.isNotEmpty)
+                              widget.pharmacy.quartier,
+                          ].join(', '),
+                          color: Colors.blue,
+                        ),
 
-                      const SizedBox(height: 12),
+                      if (widget.pharmacy.address.isNotEmpty ||
+                          widget.pharmacy.quartier.isNotEmpty)
+                        const SizedBox(height: 12),
 
                       // Téléphone
                       if (widget.pharmacy.phone.isNotEmpty)

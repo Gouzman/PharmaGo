@@ -158,6 +158,14 @@ public class OsmSyncService
 
         return syncedCount;
     }
+
+    /// <summary>
+    /// Récupère la liste des pharmacies OSM (pour fusion)
+    /// </summary>
+    public async Task<List<Pharmacy>> GetOsmPharmaciesAsync()
+    {
+        return await _supabaseClient.GetPharmaciesAsync();
+    }
 }
 
 /// <summary>

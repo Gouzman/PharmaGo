@@ -96,7 +96,7 @@ public class SupabaseClientService
             var today = DateTime.UtcNow.Date;
             var response = await _client
                 .From<GuardScheduleDto>()
-                .Where(x => x.GuardDate == today && x.IsActive == true)
+                .Where(x => x.GuardDate == today && x.IsActive)
                 .Get();
 
             return response.Models.Select(dto => new GuardSchedule
@@ -125,7 +125,7 @@ public class SupabaseClientService
             // 1️⃣ Récupérer toutes les pharmacies actuellement en garde
             var currentGuards = await _client
                 .From<PharmacyDto>()
-                .Where(x => x.IsGuard == true)
+                .Where(x => x.IsGuard)
                 .Get();
 
             // 2️⃣ Désactiver toutes les pharmacies actuellement en garde
@@ -303,6 +303,81 @@ public class SupabaseClientService
             throw;
         }
     }
+
+    /// <summary>
+    /// Insère une entrée dans l'historique
+    /// ⚠️ DÉSACTIVÉ - Table pharmacy_history non créée
+    /// </summary>
+    public async Task InsertHistoryAsync(PharmacyHistory history)
+    {
+        // Désactivé car la table pharmacy_history n'existe pas encore dans Supabase
+        // Exécutez d'abord : supabase_migration_v2_history_confidence.sql
+        await Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Récupère l'historique d'une pharmacie
+    /// ⚠️ DÉSACTIVÉ - Table pharmacy_history non créée
+    /// </summary>
+    public async Task<List<PharmacyHistory>> GetPharmacyHistoryAsync(string pharmacyId)
+    {
+        // Désactivé car la table pharmacy_history n'existe pas
+        await Task.CompletedTask;
+        return new List<PharmacyHistory>();
+    }
+
+    /// <summary>
+    /// Récupère les entrées d'historique nécessitant une révision
+    /// ⚠️ DÉSACTIVÉ - Table pharmacy_history non créée
+    /// </summary>
+    public async Task<List<PharmacyHistory>> GetHistoryNeedingReviewAsync()
+    {
+        // Désactivé car la table pharmacy_history n'existe pas
+        await Task.CompletedTask;
+        return new List<PharmacyHistory>();
+    }
+
+    /// <summary>
+    /// Marque une entrée d'historique comme validée
+    /// </summary>
+    public async Task ValidateHistoryEntryAsync(string historyId, string validatedBy)
+    {
+        try
+        {
+            var response = await _client
+                .From<PharmacyHistoryDto>()
+                .Where(x => x.Id == historyId)
+                .Get();
+
+            if (response.Models.Count > 0)
+            {
+                var dto = response.Models[0];
+                dto.IsValidated = true;
+                dto.ValidatedAt = DateTime.UtcNow;
+                dto.ValidatedBy = validatedBy;
+
+                await _client
+                    .From<PharmacyHistoryDto>()
+                    .Update(dto);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"⚠️ Erreur validation: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Met à jour le score de confiance d'une pharmacie
+    /// ⚠️ DÉSACTIVÉ - Colonne confidence_score non créée
+    /// </summary>
+    public async Task UpdateConfidenceScoreAsync(string pharmacyId, int score)
+    {
+        // Désactivé car la colonne confidence_score n'existe pas encore dans Supabase
+        // Exécutez d'abord : supabase_migration_v2_history_confidence.sql
+        Console.WriteLine($"⚠️ UpdateConfidenceScore désactivé (migration requise)");
+        await Task.CompletedTask;
+    }
 }
 
 /// <summary>
@@ -383,4 +458,59 @@ public class GuardScheduleDto : Supabase.Postgrest.Models.BaseModel
 
     [Supabase.Postgrest.Attributes.Column("created_at")]
     public DateTime CreatedAt { get; set; }
+}
+
+/// <summary>
+/// DTO pour la table pharmacy_history dans Supabase
+/// </summary>
+[Supabase.Postgrest.Attributes.Table("pharmacy_history")]
+public class PharmacyHistoryDto : Supabase.Postgrest.Models.BaseModel
+{
+    [Supabase.Postgrest.Attributes.PrimaryKey("id")]
+    public string Id { get; set; } = Guid.NewGuid().ToString();
+
+    [Supabase.Postgrest.Attributes.Column("pharmacy_id")]
+    public string PharmacyId { get; set; } = string.Empty;
+
+    [Supabase.Postgrest.Attributes.Column("change_type")]
+    public string ChangeType { get; set; } = string.Empty;
+
+    [Supabase.Postgrest.Attributes.Column("source")]
+    public string Source { get; set; } = string.Empty;
+
+    [Supabase.Postgrest.Attributes.Column("field_changed")]
+    public string? FieldChanged { get; set; }
+
+    [Supabase.Postgrest.Attributes.Column("old_value")]
+    public string? OldValue { get; set; }
+
+    [Supabase.Postgrest.Attributes.Column("new_value")]
+    public string? NewValue { get; set; }
+
+    [Supabase.Postgrest.Attributes.Column("old_values")]
+    public string? OldValues { get; set; }
+
+    [Supabase.Postgrest.Attributes.Column("new_values")]
+    public string? NewValues { get; set; }
+
+    [Supabase.Postgrest.Attributes.Column("modified_by")]
+    public string? ModifiedBy { get; set; }
+
+    [Supabase.Postgrest.Attributes.Column("modified_at")]
+    public DateTime ModifiedAt { get; set; } = DateTime.UtcNow;
+
+    [Supabase.Postgrest.Attributes.Column("notes")]
+    public string? Notes { get; set; }
+
+    [Supabase.Postgrest.Attributes.Column("needs_review")]
+    public bool NeedsReview { get; set; }
+
+    [Supabase.Postgrest.Attributes.Column("is_validated")]
+    public bool IsValidated { get; set; }
+
+    [Supabase.Postgrest.Attributes.Column("validated_at")]
+    public DateTime? ValidatedAt { get; set; }
+
+    [Supabase.Postgrest.Attributes.Column("validated_by")]
+    public string? ValidatedBy { get; set; }
 }

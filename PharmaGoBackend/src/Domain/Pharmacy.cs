@@ -57,6 +57,18 @@ public class Pharmacy
     /// </summary>
     public bool IsGuard { get; set; }
 
+    // ⚠️ DÉSACTIVÉ EN ATTENDANT MIGRATION SQL (voir supabase_migration_v2_history_confidence.sql)
+    // /// <summary>
+    // /// Score de confiance des données (0-100)
+    // /// Basé sur : multiples sources, validation humaine, historique stable
+    // /// </summary>
+    // public int ConfidenceScore { get; set; } = 60;
+
+    // /// <summary>
+    // /// Sources des données (ex: "osm,pharmacies-de-garde.ci")
+    // /// </summary>
+    // public string DataSources { get; set; } = "osm";
+
     /// <summary>
     /// Date de dernière mise à jour
     /// </summary>

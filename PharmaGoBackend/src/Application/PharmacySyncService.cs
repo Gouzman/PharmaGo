@@ -17,15 +17,21 @@ public class PharmacySyncService
     private readonly SupabaseClientService _supabaseClient;
     private readonly PharmacyRepository _repository;
     private readonly OsmSyncService _osmSyncService;
+    private readonly PharmaciesDeGardeScraperService _scraperService;
+    private readonly PharmacyDataMergerService _mergerService;
 
     public PharmacySyncService(
         SupabaseClientService supabaseClient, 
         PharmacyRepository repository,
-        OsmSyncService osmSyncService)
+        OsmSyncService osmSyncService,
+        PharmaciesDeGardeScraperService scraperService,
+        PharmacyDataMergerService mergerService)
     {
         _supabaseClient = supabaseClient;
         _repository = repository;
         _osmSyncService = osmSyncService;
+        _scraperService = scraperService;
+        _mergerService = mergerService;
     }
 
     /// <summary>
@@ -149,11 +155,17 @@ public class PharmacySyncService
     {
         try
         {
-            Console.WriteLine("🚀 Démarrage de la synchronisation complète...");
+            Console.WriteLine("╔═══════════════════════════════════════════════════════╗");
+            Console.WriteLine("║      🚀 SYNCHRONISATION COMPLÈTE (OSM + SCRAPING)    ║");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════╝");
+            Console.WriteLine();
+            
             var startTime = DateTime.UtcNow;
 
             // 1️⃣ Synchroniser depuis OSM vers Supabase
-            Console.WriteLine("📍 PHASE 1 : Synchronisation OpenStreetMap → Supabase");
+            Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            Console.WriteLine("📍 PHASE 1/4 : Synchronisation OpenStreetMap → Supabase");
+            Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
             var osmResult = await _osmSyncService.SyncPharmaciesFromOsmAsync();
 
             if (!osmResult.Success)
@@ -171,21 +183,42 @@ public class PharmacySyncService
             Console.WriteLine($"✅ Phase 1 terminée : {osmResult.SyncedCount} pharmacie(s) synchronisée(s)");
             Console.WriteLine();
 
-            // 2️⃣ Synchroniser les gardes
-            Console.WriteLine("📍 PHASE 2 : Synchronisation des gardes");
-            await SyncGuardPharmaciesAsync();
-            Console.WriteLine("✅ Phase 2 terminée");
+            // 2️⃣ Scraper pharmacies-de-garde.ci
+            Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            Console.WriteLine("📍 PHASE 2/4 : Scraping pharmacies-de-garde.ci");
+            Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            var guardPharmacies = await _scraperService.FetchGuardPharmaciesAsync();
+            Console.WriteLine($"✅ Phase 2 terminée : {guardPharmacies.Count} pharmacie(s) de garde scrapée(s)");
             Console.WriteLine();
 
-            // 3️⃣ Upload le JSON
-            Console.WriteLine("📍 PHASE 3 : Génération et upload du JSON");
+            // 3️⃣ Fusionner OSM + données de garde
+            Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            Console.WriteLine("📍 PHASE 3/4 : Fusion intelligente OSM + Scraping");
+            Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            var osmPharmacies = await _osmSyncService.GetOsmPharmaciesAsync();
+            var mergeResult = await _mergerService.MergeGuardDataAsync(osmPharmacies, guardPharmacies);
+            Console.WriteLine($"✅ Phase 3 terminée : {mergeResult.Matched} matchés, {mergeResult.Unmatched} non-matchés");
+            Console.WriteLine();
+
+            // 4️⃣ Upload le JSON
+            Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            Console.WriteLine("📍 PHASE 4/4 : Génération et upload du JSON");
+            Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
             var publicUrl = await UploadJsonToStorageAsync();
-            Console.WriteLine("✅ Phase 3 terminée");
+            Console.WriteLine("✅ Phase 4 terminée");
             Console.WriteLine();
 
             var duration = DateTime.UtcNow - startTime;
 
-            Console.WriteLine($"✅ Synchronisation complète terminée en {duration.TotalSeconds:F2}s");
+            Console.WriteLine("╔═══════════════════════════════════════════════════════╗");
+            Console.WriteLine($"║  ✅ SYNCHRONISATION COMPLÈTE RÉUSSIE                ║");
+            Console.WriteLine($"║  ⏱️  Durée : {duration.TotalSeconds:F1}s                          ║");
+            Console.WriteLine($"║  📊 OSM : {osmResult.SyncedCount} pharmacies                        ║");
+            Console.WriteLine($"║  🏥 Garde : {guardPharmacies.Count} pharmacies de garde             ║");
+            Console.WriteLine($"║  🔗 Matchés : {mergeResult.Matched}                                ║");
+            Console.WriteLine($"║  📍 URL : {publicUrl}");
+            Console.WriteLine("╚═══════════════════════════════════════════════════════╝");
+            Console.WriteLine();
 
             return new PharmacySyncResult
             {

@@ -63,11 +63,18 @@ builder.Services.AddScoped<OsmSyncService>();
 // Services Application
 builder.Services.AddScoped<PharmacySyncService>();
 
+// Services de scraping et fusion
+builder.Services.AddScoped<PharmaciesDeGardeScraperService>();
+builder.Services.AddScoped<PharmacyHistoryRepository>();
+builder.Services.AddScoped<PharmacyDataMergerService>();
+
 // Services Cron (BackgroundServices)
 builder.Services.AddSingleton<GuardUpdater>();
 builder.Services.AddSingleton<PharmacyUpdater>();
+builder.Services.AddSingleton<WeeklyDataSyncService>();
 builder.Services.AddHostedService(provider => provider.GetRequiredService<GuardUpdater>());
 builder.Services.AddHostedService(provider => provider.GetRequiredService<PharmacyUpdater>());
+builder.Services.AddHostedService(provider => provider.GetRequiredService<WeeklyDataSyncService>());
 
 // Logging
 builder.Services.AddLogging();
